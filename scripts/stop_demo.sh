@@ -43,7 +43,7 @@ done
 
 # ── 2. Kill Python processes for our modules (PowerShell – reliable on Windows)
 killed=$(powershell -Command "
-    \$pattern = 'Simulator\.main|Backend\.MQTTBroker\.main|Backend\.API\.main|Backend\.GTFS_RT|uvicorn Backend\.API'
+    \$pattern = 'Simulator\.main|Backend\.MQTTBroker\.main|Backend\.API\.main|Backend\.GTFS_RT|Backend\.runtime_supervisor|uvicorn Backend\.API'
     Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" 2>\$null |
         Where-Object { \$_.CommandLine -match \$pattern } |
         ForEach-Object {

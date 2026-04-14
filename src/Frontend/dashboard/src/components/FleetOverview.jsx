@@ -49,7 +49,13 @@ export default function FleetOverview({ vehicles = [] }) {
     return [...vehicles]
       .sort((a, b) => b.currentOccupancyPercent - a.currentOccupancyPercent)
       .slice(0, SLOT_COUNT)
-      .map((v) => ({ id: v.id, pct: v.currentOccupancyPercent }));
+      .map((v) => ({
+        id: v.id,
+        label: v.currentStopName
+          ? `${v.routeName} @ ${v.currentStopName}`
+          : `Route ${v.routeName}`,
+        pct: v.currentOccupancyPercent,
+      }));
   }, [vehicles]);
 
   // Slot-based animation: animate by position, not by vehicle ID
@@ -69,7 +75,7 @@ export default function FleetOverview({ vehicles = [] }) {
       const frame = to.map((target, i) => {
         const fromPct = i < from.length ? from[i].pct : 0;
         const pct = Math.round(lerp(fromPct, target.pct, e));
-        return { id: target.id, pct };
+        return { id: target.id, label: target.label, pct };
       });
 
       setSlots(frame);
@@ -139,7 +145,7 @@ export default function FleetOverview({ vehicles = [] }) {
           <span className="fleet-dist-title">Most Full</span>
           {slots.map((s, i) => (
             <div key={i} className="fleet-top3-row">
-              <span className="fleet-top3-id">{s.id}</span>
+              <span className="fleet-top3-id" title={s.label}>{s.label}</span>
               <div className="fleet-bar-track">
                 <div
                   className="fleet-bar-fill"

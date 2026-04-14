@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { apiGet } from '../services/apiService';
 
 const AlertIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -11,17 +12,35 @@ const severityClass = {
   info: 'alert-info',
   warning: 'alert-warning',
   critical: 'alert-critical',
+  decision: 'alert-decision',
 };
 
 export default function AlertBar({ alerts = [] }) {
   const [dismissed, setDismissed] = useState(new Set());
+  const [decisions, setDecisions] = useState([]);
 
-  const visible = useMemo(
-    () => alerts.filter((a) => !dismissed.has(a.id)),
-    [alerts, dismissed],
-  );
+  useEffect(() => {
+    apiGet('/api/scheduler/decisions?limit=5').then((d) => {
+      if (d) setDecisions(d);
+    }).catch(() => {});
+    const interval = setInterval(() => {
+      apiGet('/api/scheduler/decisions?limit=5').then((d) => {
+        if (d) setDecisions(d);
+      }).catch(() => {});
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
-  const current = visible[0];
+  const combined = useMemo(() => {
+    const decisionAlerts = decisions.map((d) => ({
+      id: `decision-${d.id}`,
+      severity: 'decision',
+      message: `${d.decision_type}: Route ${d.route_id} dir ${d.direction_id} — peak ${Math.round((d.predicted_occupancy_pct ?? 0) * 100)}% occ${d.total_stranded > 0 ? `, ${d.total_stranded} stranded` : ''}`,
+    }));
+    return [...alerts, ...decisionAlerts].filter((a) => !dismissed.has(a.id));
+  }, [alerts, decisions, dismissed]);
+
+  const current = combined[0];
   if (!current) return null;
 
   return (
@@ -29,8 +48,8 @@ export default function AlertBar({ alerts = [] }) {
       <div className="alert-content">
         <AlertIcon />
         <span className="alert-msg">{current.message}</span>
-        {visible.length > 1 && (
-          <span className="alert-badge">+{visible.length - 1} more</span>
+        {combined.length > 1 && (
+          <span className="alert-badge">+{combined.length - 1} more</span>
         )}
       </div>
       <div className="alert-actions">

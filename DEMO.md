@@ -20,13 +20,17 @@ The script starts everything in order, checks connectivity, and prints the dashb
 1. Docker containers (Mosquitto + TimescaleDB)
 2. Database seed (idempotent -- skips if already seeded)
 3. Process cleanup (kills leftover Python processes from previous runs)
-4. GTFS-RT fetcher (conditional -- skipped if no API key in `.env`)
-5. Backend MQTT BrokerHandler
-6. FastAPI API server
-7. React dashboard (Vite dev server)
-8. Crowd count simulator (backfills ~30s, then continuous updates)
-9. Final connectivity check (DB row count + WebSocket probe)
-10. Firewall safety audit (verifies all ports are loopback-only)
+4. Backend runtime supervisor -- one process that manages:
+   - MQTT BrokerHandler (subprocess, service mode)
+   - FastAPI API server (subprocess via uvicorn)
+   - GTFS-RT fetcher (subprocess, conditional -- skipped if no API key)
+   - Prediction loop (embedded thread, reacts to new crowd + GTFS data)
+5. React dashboard (Vite dev server)
+6. Crowd count simulator (backfills ~30s, then continuous updates)
+7. Data-flow checks (crowd counts, GTFS-RT rows, predictions, WebSocket probe)
+8. Firewall safety audit (verifies all ports are loopback-only)
+
+The runtime supervisor automatically restarts any backend service that crashes.
 
 **Options:**
 
@@ -75,6 +79,7 @@ Service logs are written to `logs/`:
 
 | Log file | Service |
 |----------|---------|
+| `runtime_supervisor.log` | Runtime supervisor + prediction loop |
 | `broker_handler.log` | MQTT BrokerHandler |
 | `api_server.log` | FastAPI API |
 | `dashboard.log` | React dev server |

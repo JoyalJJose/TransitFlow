@@ -178,8 +178,155 @@ async def health():
     except Exception:
         db_ok = False
 
+    pg_listen_ok = _pg_conn is not None and not _pg_conn.is_closed() if _pg_conn else False
+
+    mqtt_status = os.environ.get("MQTT_STATUS", "ok" if db_ok else "unknown")
+    gtfs_rt_status = os.environ.get("GTFS_RT_STATUS", "ok" if db_ok else "unknown")
+
     return {
         "status": "ok" if db_ok else "degraded",
         "db": db_ok,
         "connected_clients": manager.client_count,
+        "pg_listen": "ok" if pg_listen_ok else "down",
+        "coalesce_ms": int(COALESCE_WINDOW_S * 1000),
+        "mqtt": mqtt_status,
+        "gtfs_rt": gtfs_rt_status,
+        "gtfs_rt_last_fetch": os.environ.get("GTFS_RT_LAST_FETCH"),
+        "gtfs_rt_entities": int(os.environ.get("GTFS_RT_ENTITIES", "0")) or None,
+        "gtfs_rt_errors": int(os.environ.get("GTFS_RT_ERRORS", "0")),
+        "gtfs_rt_poll_interval": int(os.environ.get("GTFSR_POLL_INTERVAL", "60")),
+        "gtfs_rt_retain": int(os.environ.get("GTFSR_RETAIN_FETCHES", "20")),
+        "gtfs_rt_timeout": int(os.environ.get("GTFSR_REQUEST_TIMEOUT", "30")),
     }
+
+
+# ---------------------------------------------------------------------------
+# REST endpoints for on-demand queries
+# ---------------------------------------------------------------------------
+
+@app.get("/api/stops/{stop_id}/history")
+async def stop_history(stop_id: str, hours: int = 24):
+    return await asyncio.get_event_loop().run_in_executor(
+        None, queries.query_stop_history, _pool, stop_id, hours)
+
+
+@app.get("/api/vehicles/history")
+async def vehicle_history(hours: int = 24, route_id: str | None = None):
+    return await asyncio.get_event_loop().run_in_executor(
+        None, queries.query_vehicle_history, _pool, hours, route_id)
+
+
+@app.get("/api/predictions/latest")
+async def predictions_latest():
+    return await asyncio.get_event_loop().run_in_executor(
+        None, queries.query_predictions_latest, _pool)
+
+
+@app.get("/api/predictions/{route_id}")
+async def predictions_for_route(route_id: str, direction_id: int = 0):
+    return await asyncio.get_event_loop().run_in_executor(
+        None, queries.query_predictions_for_route, _pool, route_id, direction_id)
+
+
+@app.get("/api/scheduler/decisions")
+async def scheduler_decisions(limit: int = 50):
+    return await asyncio.get_event_loop().run_in_executor(
+        None, queries.query_scheduler_decisions, _pool, limit)
+
+
+@app.get("/api/analytics/on-time")
+async def analytics_on_time(route_id: str | None = None, hours: int = 24):
+    return await asyncio.get_event_loop().run_in_executor(
+        None, queries.query_on_time, _pool, route_id, hours)
+
+
+@app.get("/api/analytics/delays")
+async def analytics_delays(route_id: str | None = None, hours: int = 24):
+    return await asyncio.get_event_loop().run_in_executor(
+        None, queries.query_delay_data, _pool, route_id, hours)
+
+
+@app.get("/api/analytics/service-alerts")
+async def analytics_service_alerts():
+    return await asyncio.get_event_loop().run_in_executor(
+        None, queries.query_service_alerts, _pool)
+
+
+@app.get("/api/analytics/gtfs-rt-freshness")
+async def gtfs_rt_freshness():
+    return await asyncio.get_event_loop().run_in_executor(
+        None, queries.query_gtfs_rt_freshness, _pool)
+
+
+@app.get("/api/devices")
+async def devices():
+    return await asyncio.get_event_loop().run_in_executor(
+        None, queries.query_devices, _pool)
+
+
+@app.get("/api/devices/{device_id}/logs")
+async def device_logs(device_id: str, limit: int = 100):
+    return await asyncio.get_event_loop().run_in_executor(
+        None, queries.query_device_logs, _pool, device_id, limit)
+
+
+@app.get("/api/models")
+async def models():
+    return await asyncio.get_event_loop().run_in_executor(
+        None, queries.query_models, _pool)
+
+
+@app.get("/api/alerts")
+async def all_alerts():
+    return await asyncio.get_event_loop().run_in_executor(
+        None, queries.query_all_alerts, _pool)
+
+
+@app.get("/api/admin/log")
+async def admin_log(limit: int = 100):
+    return await asyncio.get_event_loop().run_in_executor(
+        None, queries.query_admin_log, _pool, limit)
+
+
+@app.post("/api/alerts/{alert_id}/resolve")
+async def resolve_alert(alert_id: int):
+    await asyncio.get_event_loop().run_in_executor(
+        None, queries.resolve_alert, _pool, alert_id)
+    return {"ok": True}
+
+
+@app.post("/api/admin/command")
+async def admin_command(body: dict):
+    """Forward an admin command to an edge device via MQTT.
+
+    Requires the broker_handler to be accessible. For now this is a stub
+    that logs the command -- full integration requires sharing the
+    BrokerHandler instance with this process.
+    """
+    logger.info("Admin command received: %s", body)
+    device_id = body.get("device_id")
+    if not device_id:
+        return {"error": "device_id required"}
+    return {"ok": True, "device_id": device_id, "command": body}
+
+
+@app.get("/api/config/prediction")
+async def get_prediction_config():
+    return {"alighting_fraction": 0.05, "default_capacity": 80}
+
+
+@app.put("/api/config/prediction")
+async def update_prediction_config(body: dict):
+    logger.info("Prediction config update: %s", body)
+    return {"ok": True, **body}
+
+
+@app.get("/api/config/evaluator")
+async def get_evaluator_config(route_id: str | None = None):
+    return {"occupancy_threshold": 0.9, "min_stranded": 5, "min_confidence": 0.3}
+
+
+@app.put("/api/config/evaluator")
+async def update_evaluator_config(body: dict):
+    logger.info("Evaluator config update: %s", body)
+    return {"ok": True, **body}

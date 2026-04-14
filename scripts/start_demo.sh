@@ -14,6 +14,14 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# Export variables from .env so child processes (simulator, fetcher) inherit them.
+# Shell-level vars (e.g. SIM_TIME_SCALE=3) still override via the command line.
+if [ -f "$ROOT/.env" ]; then
+    set -a
+    source "$ROOT/.env"
+    set +a
+fi
+
 LOGDIR="$ROOT/logs"
 mkdir -p "$LOGDIR"
 
@@ -121,7 +129,7 @@ done
 
 # Kill leftover Python processes for our modules (prevents MQTT client_id collision)
 killed=$(powershell -Command "
-    \$pattern = 'Simulator\.main|Backend\.MQTTBroker\.main|Backend\.API\.main|Backend\.GTFS_RT|uvicorn Backend\.API'
+    \$pattern = 'Simulator\.main|Backend\.MQTTBroker\.main|Backend\.API\.main|Backend\.GTFS_RT|Backend\.runtime_supervisor|uvicorn Backend\.API'
     Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" 2>\$null |
         Where-Object { \$_.CommandLine -match \$pattern } |
         ForEach-Object {
@@ -136,58 +144,48 @@ if [ -n "$killed" ]; then
     done <<< "$killed"
 fi
 
-# ── 4. GTFS-RT fetcher (conditional — requires API key + internet) ─
-log "Checking GTFS-RT API key…"
-gtfs_key=$(python -c "from dotenv import dotenv_values; print(dotenv_values('.env').get('GTFSR_API_KEY',''))" 2>/dev/null || echo "")
+# ── 4. Backend runtime supervisor ─────────────────────────────────
+# One process supervises MQTT broker, API, GTFS-RT (if key set), and
+# an embedded prediction loop.  Each service logs to its own file.
+log "Starting backend runtime supervisor…"
 
 GTFSRT_RUNNING=false
-if [ -n "$gtfs_key" ]; then
-    log "Starting GTFS-RT fetcher (polls NTA API every 60s)…"
-    (cd "$ROOT" && PYTHONPATH=src python -m Backend.GTFS_RT \
-    ) >"$LOGDIR/gtfsrt_fetcher.log" 2>&1 &
-    PIDS+=($!)
-    sleep 5
-
-    if grep -q "Fetched GTFS-R feed" "$LOGDIR/gtfsrt_fetcher.log" 2>/dev/null; then
-        ok "GTFS-RT fetcher running — first fetch successful (log: logs/gtfsrt_fetcher.log)"
-        GTFSRT_RUNNING=true
-    elif grep -q "GTFSR_API_KEY is not set" "$LOGDIR/gtfsrt_fetcher.log" 2>/dev/null; then
-        warn "GTFS-RT fetcher failed — API key rejected (check logs/gtfsrt_fetcher.log)"
-    elif grep -q "fetcher started" "$LOGDIR/gtfsrt_fetcher.log" 2>/dev/null; then
-        ok "GTFS-RT fetcher started — first fetch pending (log: logs/gtfsrt_fetcher.log)"
-        GTFSRT_RUNNING=true
-    else
-        warn "GTFS-RT fetcher may have failed to start (check logs/gtfsrt_fetcher.log)"
-    fi
-else
-    warn "GTFS-RT fetcher skipped — no API key. Set GTFSR_API_KEY in .env"
+if [ -n "${GTFSR_API_KEY:-}" ]; then
+    GTFSRT_RUNNING=true
 fi
 
-# ── 5. Backend MQTT BrokerHandler ─────────────────────────────────
-log "Starting Backend MQTT BrokerHandler…"
-(cd "$ROOT" && PYTHONPATH=src \
-    tail -f /dev/null | PYTHONPATH=src python -m Backend.MQTTBroker.main \
-) >"$LOGDIR/broker_handler.log" 2>&1 &
+(cd "$ROOT" && PYTHONPATH=src python -m Backend.runtime_supervisor \
+) >"$LOGDIR/runtime_supervisor.log" 2>&1 &
 PIDS+=($!)
+
+# Wait for API to come up (started by supervisor)
+wait_for_port 127.0.0.1 8000 "FastAPI (via supervisor)" 20
+
+# Quick verification of sub-services
 sleep 3
-
 if grep -q "Subscribed to all edge" "$LOGDIR/broker_handler.log" 2>/dev/null; then
-    ok "BrokerHandler connected and subscribed (log: logs/broker_handler.log)"
+    ok "MQTT BrokerHandler connected (log: logs/broker_handler.log)"
 elif grep -q "Backend connected" "$LOGDIR/broker_handler.log" 2>/dev/null; then
-    ok "BrokerHandler connected (log: logs/broker_handler.log)"
+    ok "MQTT BrokerHandler connected (log: logs/broker_handler.log)"
 else
-    warn "BrokerHandler may still be connecting (check logs/broker_handler.log)"
+    warn "MQTT BrokerHandler may still be connecting (check logs/broker_handler.log)"
 fi
 
-# ── 6. FastAPI API server ─────────────────────────────────────────
-log "Starting FastAPI API server…"
-(cd "$ROOT" && PYTHONPATH=src python -m uvicorn Backend.API.main:app \
-    --host 127.0.0.1 --port 8000 \
-) >"$LOGDIR/api_server.log" 2>&1 &
-PIDS+=($!)
-wait_for_port 127.0.0.1 8000 "FastAPI (log: logs/api_server.log)" 15
+if [ "$GTFSRT_RUNNING" = true ]; then
+    if grep -q "Fetched GTFS-R feed\|fetcher started" "$LOGDIR/gtfsrt_fetcher.log" 2>/dev/null; then
+        ok "GTFS-RT fetcher active (log: logs/gtfsrt_fetcher.log)"
+    else
+        warn "GTFS-RT fetcher may still be starting (check logs/gtfsrt_fetcher.log)"
+    fi
+fi
 
-# ── 7. Frontend dashboard ─────────────────────────────────────────
+if grep -q "Cycle complete\|Prediction loop started" "$LOGDIR/runtime_supervisor.log" 2>/dev/null; then
+    ok "Prediction loop running (log: logs/runtime_supervisor.log)"
+else
+    warn "Prediction loop may still be starting (check logs/runtime_supervisor.log)"
+fi
+
+# ── 5. Frontend dashboard ─────────────────────────────────────────
 log "Starting React dashboard…"
 (cd "$ROOT/src/Frontend/dashboard" && npm run dev) >"$LOGDIR/dashboard.log" 2>&1 &
 PIDS+=($!)
@@ -201,7 +199,7 @@ elif python -c "import socket; s=socket.create_connection(('127.0.0.1',5174),tim
 fi
 ok "Dashboard running on http://localhost:$DASHBOARD_PORT/ (log: logs/dashboard.log)"
 
-# ── 8. Crowd-count simulator ─────────────────────────────────────
+# ── 6. Crowd-count simulator ─────────────────────────────────────
 log "Starting crowd-count simulator…"
 (cd "$ROOT" && \
     SIM_TIME_SCALE="${SIM_TIME_SCALE:-1}" \
@@ -224,14 +222,40 @@ for i in $(seq 1 60); do
     sleep 1
 done
 
-# ── 9. Final connectivity check ──────────────────────────────────
+# ── 7. Final connectivity / data-flow check ──────────────────────
 log "Running final connectivity check…"
 sleep 3
 
+# Crowd data reached DB (via simulator → MQTT → broker → writer)
 db_rows=$(docker exec transitflow-db psql -U transitflow -d transitflow -tAc \
     "SELECT count(*) FROM current_counts WHERE count >= 0;" 2>/dev/null || echo "0")
-ok "Database: $db_rows stops with live crowd data"
+if [ "${db_rows:-0}" -gt 0 ]; then
+    ok "Crowd data: $db_rows stops with live counts"
+else
+    warn "No crowd data in current_counts yet"
+fi
 
+# GTFS-RT data reached DB (if fetcher is active)
+if [ "$GTFSRT_RUNNING" = true ]; then
+    gtfs_rows=$(docker exec transitflow-db psql -U transitflow -d transitflow -tAc \
+        "SELECT count(*) FROM gtfs_rt_trip_updates;" 2>/dev/null || echo "0")
+    if [ "${gtfs_rows:-0}" -gt 0 ]; then
+        ok "GTFS-RT data: $gtfs_rows trip update rows"
+    else
+        warn "No GTFS-RT trip updates yet (may take up to 60s)"
+    fi
+fi
+
+# Predictions written by embedded prediction loop
+pred_rows=$(docker exec transitflow-db psql -U transitflow -d transitflow -tAc \
+    "SELECT count(*) FROM predictions;" 2>/dev/null || echo "0")
+if [ "${pred_rows:-0}" -gt 0 ]; then
+    ok "Predictions: $pred_rows rows"
+else
+    warn "No predictions yet (first cycle may still be running)"
+fi
+
+# WebSocket payload check
 ws_ok=$(python -c "
 import asyncio, websockets, json
 async def check():
@@ -250,7 +274,7 @@ else
     ok "WebSocket payload: $ws_ok"
 fi
 
-# ── 10. Firewall safety audit ────────────────────────────────────
+# ── 8. Firewall safety audit ─────────────────────────────────────
 log "Firewall safety check…"
 unsafe=0
 for port in 5432 8883 8000; do
@@ -286,12 +310,12 @@ else
     echo -e "  GTFS-RT:     ${YELLOW}inactive${NC} (no API key or failed to start)"
 fi
 echo ""
-echo -e "  Logs:        ${CYAN}logs/${NC} (broker_handler, api_server, dashboard, simulator, gtfsrt_fetcher)"
+echo -e "  Logs:        ${CYAN}logs/${NC} (runtime_supervisor, broker_handler, api_server, dashboard, simulator, gtfsrt_fetcher)"
 echo ""
 echo -e "  Press ${YELLOW}Ctrl+C${NC} to stop all services"
 echo ""
 
-# Keep the script alive – tail the simulator log for live feedback
-tail -f "$LOGDIR/simulator.log" 2>/dev/null &
+# Keep the script alive – tail supervisor + simulator logs for live feedback
+tail -f "$LOGDIR/runtime_supervisor.log" "$LOGDIR/simulator.log" 2>/dev/null &
 PIDS+=($!)
 wait "${PIDS[@]}" 2>/dev/null || true

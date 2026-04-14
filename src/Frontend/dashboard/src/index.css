@@ -27,6 +27,7 @@
   --danger: #ef4444;
   --warning: #d7a6b3;
   --success: #9063ff;
+  --online: #22c55e;
 
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
@@ -52,6 +53,7 @@
   --chart-tooltip-bg: #2a2b44;
   --chart-tooltip-border: rgba(144, 99, 255, 0.2);
   --chart-tick: rgba(229, 205, 200, 0.65);
+  --online: #22c55e;
 }
 
 body {

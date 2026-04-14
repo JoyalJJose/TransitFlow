@@ -1,4 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import NavTabs from './NavTabs';
 
 const MenuIcon = () => (
   <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -141,9 +143,11 @@ export default function HeaderBar({ theme, onToggleTheme, filter, onFilterChange
     setDropdownOpen((prev) => !prev);
   }, []);
 
+  const navigate = useNavigate();
   const handleHome = useCallback(() => {
     onFilterChange('all');
-  }, [onFilterChange]);
+    navigate('/');
+  }, [onFilterChange, navigate]);
 
   const handleSearchEnter = useCallback(() => {
     if (searchLeaveTimer.current) { clearTimeout(searchLeaveTimer.current); searchLeaveTimer.current = null; }
@@ -257,12 +261,14 @@ export default function HeaderBar({ theme, onToggleTheme, filter, onFilterChange
           </div>
         </div>
 
-        <button className="icon-btn" onClick={handleHome} aria-label="Home">
-          <HomeIcon />
+        <button className="icon-btn header-logo-btn" onClick={handleHome} aria-label="Home">
+          <img src="/transitflow.png" alt="TransitFlow" className="header-logo" />
         </button>
 
-        <h1 className="header-title">Transit Dashboard</h1>
+        <h1 className="header-title">TransitFlow Dashboard</h1>
       </div>
+
+      <NavTabs />
 
       <div className="header-right">
         <div className="filter-pill">
@@ -274,16 +280,16 @@ export default function HeaderBar({ theme, onToggleTheme, filter, onFilterChange
             <span className="filter-seg-label">All</span>
           </button>
           <button
-            className={`filter-seg filter-seg-luas ${filter === 'luas' ? 'filter-seg-active' : ''}`}
-            onClick={() => onFilterChange('luas')}
-          >
-            <LuasIcon />
-          </button>
-          <button
             className={`filter-seg filter-seg-bus ${filter === 'bus' ? 'filter-seg-active' : ''}`}
             onClick={() => onFilterChange('bus')}
           >
             <DublinBusIcon />
+          </button>
+          <button
+            className={`filter-seg filter-seg-luas ${filter === 'luas' ? 'filter-seg-active' : ''}`}
+            onClick={() => onFilterChange('luas')}
+          >
+            <LuasIcon />
           </button>
         </div>
         <div

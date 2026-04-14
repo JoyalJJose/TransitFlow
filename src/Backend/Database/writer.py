@@ -340,12 +340,64 @@ class DatabaseWriter:
         passenger_count: int = 0,
         occupancy_percent: float = 0.0,
     ):
-        """Placeholder -- will be implemented with the Scheduler."""
-        raise NotImplementedError
+        """Insert or update a vehicle row in the ``vehicles`` table."""
+        now = _dt.datetime.now(_dt.timezone.utc)
+        try:
+            with self._pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO vehicles
+                            (vehicle_id, route_id, capacity, current_stop_id,
+                             state, passenger_count, occupancy_percent,
+                             is_active, last_updated)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s)
+                        ON CONFLICT (vehicle_id) DO UPDATE SET
+                            route_id          = EXCLUDED.route_id,
+                            capacity          = EXCLUDED.capacity,
+                            current_stop_id   = EXCLUDED.current_stop_id,
+                            state             = EXCLUDED.state,
+                            passenger_count   = EXCLUDED.passenger_count,
+                            occupancy_percent = EXCLUDED.occupancy_percent,
+                            is_active         = TRUE,
+                            last_updated      = EXCLUDED.last_updated
+                        """,
+                        (vehicle_id, route_id, capacity, current_stop_id,
+                         state, passenger_count, occupancy_percent, now),
+                    )
+                    cur.execute("NOTIFY dashboard_update, 'vehicle'")
+                conn.commit()
+        except Exception:
+            logger.exception("[%s] Failed to upsert vehicle", vehicle_id)
 
-    def write_vehicle_telemetry(self, **kwargs):
-        """Placeholder -- will be implemented with the GTFS-RT / Scheduler module."""
-        raise NotImplementedError
+    def write_vehicle_telemetry(
+        self,
+        vehicle_id: str,
+        route_id: str | None = None,
+        passenger_count: int = 0,
+        occupancy_percent: float = 0.0,
+        current_stop_id: str | None = None,
+        state: str = "INACTIVE",
+        time: _dt.datetime | None = None,
+    ):
+        """Insert a single row into the ``vehicle_telemetry`` hypertable."""
+        ts = time or _dt.datetime.now(_dt.timezone.utc)
+        try:
+            with self._pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO vehicle_telemetry
+                            (time, vehicle_id, route_id, passenger_count,
+                             occupancy_percent, current_stop_id, state)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (ts, vehicle_id, route_id, passenger_count,
+                         occupancy_percent, current_stop_id, state),
+                    )
+                conn.commit()
+        except Exception:
+            logger.exception("[%s] Failed to write vehicle telemetry", vehicle_id)
 
     def write_predictions(self, result):
         """Persist a :class:`RoutePredictionResult` to the ``predictions`` hypertable.

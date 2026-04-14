@@ -12,9 +12,10 @@ import {
 } from 'recharts';
 
 function effColor(pct) {
-  if (pct >= 80) return '#9063ff';
-  if (pct >= 60) return '#d7a6b3';
-  return '#ef4444';
+  if (pct >= 70) return '#0e7490';
+  if (pct >= 50) return '#1596ad';
+  if (pct >= 30) return '#3ab0c4';
+  return '#6bc4d4';
 }
 
 function shortRoute(name) {
@@ -50,13 +51,7 @@ export default function CenterCharts({
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={resourceEfficiency} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={grid} />
-              <XAxis
-                dataKey="route"
-                tick={tick}
-                tickFormatter={shortRoute}
-                interval={0}
-                height={18}
-              />
+              <XAxis dataKey="route" hide />
               <YAxis domain={[0, 100]} tick={tick} tickFormatter={(v) => `${v}%`} width={32} />
               <Tooltip
                 contentStyle={tooltipStyle}

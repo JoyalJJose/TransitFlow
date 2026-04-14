@@ -39,13 +39,13 @@ def _query_routes(cur) -> list[dict]:
                r.route_short_name,
                r.route_long_name,
                r.transport_type,
-               COALESCE(
-                   array_agg(DISTINCT rs.stop_id) FILTER (WHERE rs.stop_id IS NOT NULL),
-                   '{}'
-               ) AS stop_ids
+               COALESCE(sub.stop_ids, '{}') AS stop_ids
         FROM routes r
-        LEFT JOIN route_stops rs ON rs.route_id = r.route_id
-        GROUP BY r.route_id
+        LEFT JOIN LATERAL (
+            SELECT array_agg(rs.stop_id ORDER BY rs.stop_sequence) AS stop_ids
+            FROM route_stops rs
+            WHERE rs.route_id = r.route_id AND rs.direction_id = 0
+        ) sub ON true
         ORDER BY r.transport_type, r.route_short_name
     """)
     out = []
@@ -67,14 +67,18 @@ def _query_routes(cur) -> list[dict]:
 
 def _query_stops(cur) -> list[dict]:
     cur.execute("""
-        SELECT stop_id, stop_name, stop_lat, stop_long, transport_type
+        SELECT stop_id, stop_name, stop_lat, stop_long, transport_type,
+               device_id, is_online, pipeline_active, last_seen
         FROM stops
         ORDER BY stop_name
     """)
     return [
         {"id": r["stop_id"], "name": r["stop_name"],
          "lat": r["stop_lat"], "lng": r["stop_long"],
-         "type": r["transport_type"]}
+         "type": r["transport_type"],
+         "deviceId": r["device_id"], "isOnline": r["is_online"],
+         "pipelineActive": r["pipeline_active"],
+         "lastSeen": str(r["last_seen"]) if r["last_seen"] else None}
         for r in _rows(cur)
     ]
 
@@ -250,16 +254,20 @@ def _query_on_time_data(cur) -> dict[str, Any]:
     """On-time performance bucketed by hour for last 24 h.
 
     Returns ``{"all": [...], "luas": [...], "bus": [...]}``.
+
+    Joins through ``stops`` rather than ``routes`` because GTFS-RT
+    trip-update route IDs may differ from the static GTFS route IDs,
+    while stop IDs are consistent across both feeds.
     """
     cur.execute("""
         SELECT time_bucket('1 hour', tu.time) AS bucket,
-               r.transport_type,
+               s.transport_type,
                COUNT(*) AS total,
                COUNT(*) FILTER (WHERE ABS(COALESCE(tu.arrival_delay, 0)) < 300) AS on_time
         FROM gtfs_rt_trip_updates tu
-        JOIN routes r ON r.route_id = tu.route_id
+        JOIN stops s ON s.stop_id = tu.stop_id
         WHERE tu.time > NOW() - INTERVAL '24 hours'
-        GROUP BY bucket, r.transport_type
+        GROUP BY bucket, s.transport_type
         ORDER BY bucket
     """)
     rows = _rows(cur)
@@ -373,6 +381,416 @@ def _query_alerts(cur) -> list[dict]:
         {"id": r["id"], "severity": r["severity"], "message": r["message"]}
         for r in _rows(cur)
     ]
+
+
+# ---------------------------------------------------------------------------
+# On-demand query functions (for REST endpoints)
+# ---------------------------------------------------------------------------
+
+def query_stop_history(pool, stop_id: str, hours: int = 24) -> list[dict]:
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT time, count, zone
+                FROM crowd_count
+                WHERE stop_id = %s AND time > NOW() - make_interval(hours => %s)
+                ORDER BY time
+            """, (stop_id, hours))
+            return [{"time": str(r["time"]), "count": r["count"], "zone": r["zone"]} for r in _rows(cur)]
+
+
+def query_vehicle_history(pool, hours: int = 24, route_id: str | None = None) -> list[dict]:
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            if route_id:
+                cur.execute("""
+                    SELECT time_bucket('15 minutes', vt.time) AS bucket,
+                           AVG(vt.occupancy_percent) AS avg_occupancy
+                    FROM vehicle_telemetry vt
+                    JOIN vehicles v ON v.vehicle_id = vt.vehicle_id
+                    WHERE vt.time > NOW() - make_interval(hours => %s)
+                      AND v.route_id = %s
+                    GROUP BY bucket ORDER BY bucket
+                """, (hours, route_id))
+            else:
+                cur.execute("""
+                    SELECT time_bucket('15 minutes', vt.time) AS bucket,
+                           AVG(vt.occupancy_percent) AS avg_occupancy
+                    FROM vehicle_telemetry vt
+                    WHERE vt.time > NOW() - make_interval(hours => %s)
+                    GROUP BY bucket ORDER BY bucket
+                """, (hours,))
+            return [{"time": str(r["bucket"]), "avg_occupancy": round(r["avg_occupancy"] or 0, 1)} for r in _rows(cur)]
+
+
+def query_predictions_latest(pool) -> dict:
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT DISTINCT ON (route_id, direction_id)
+                       route_id, direction_id, time
+                FROM predictions
+                ORDER BY route_id, direction_id, time DESC
+            """)
+            route_dirs = _rows(cur)
+
+            routes_out = []
+            for rd in route_dirs:
+                cur.execute("""
+                    SELECT vehicle_id, stop_id, stop_sequence,
+                           predicted_passengers, vehicle_capacity,
+                           predicted_occupancy_pct, waiting_at_stop,
+                           boarded, alighted, has_data, confidence
+                    FROM predictions
+                    WHERE route_id = %s AND direction_id = %s AND time = %s
+                    ORDER BY vehicle_id, stop_sequence
+                """, (rd["route_id"], rd["direction_id"], rd["time"]))
+                rows = _rows(cur)
+
+                vehicles = {}
+                stop_waiting: dict[str, int] = {}
+                stop_boarded: dict[str, int] = {}
+                for r in rows:
+                    vid = r["vehicle_id"]
+                    if vid not in vehicles:
+                        vehicles[vid] = {
+                            "vehicle_id": vid,
+                            "route_id": rd["route_id"],
+                            "vehicle_capacity": r["vehicle_capacity"],
+                            "confidence": r["confidence"],
+                            "peak_occupancy_pct": 0,
+                            "stops": [],
+                        }
+                    vp = vehicles[vid]
+                    occ = r["predicted_occupancy_pct"] or 0
+                    if occ > vp["peak_occupancy_pct"]:
+                        vp["peak_occupancy_pct"] = occ
+                    vp["stops"].append({
+                        "stop_id": r["stop_id"],
+                        "stop_sequence": r["stop_sequence"],
+                        "predicted_passengers": r["predicted_passengers"],
+                        "boarded": r["boarded"],
+                        "alighted": r["alighted"],
+                        "waiting_at_stop": r["waiting_at_stop"],
+                        "has_data": r["has_data"],
+                    })
+
+                    sid = r["stop_id"]
+                    waiting = r["waiting_at_stop"] or 0
+                    boarded = r["boarded"] or 0
+                    if sid not in stop_waiting:
+                        stop_waiting[sid] = waiting
+                    stop_boarded[sid] = stop_boarded.get(sid, 0) + boarded
+
+                stranded = {
+                    sid: max(0, stop_waiting[sid] - stop_boarded.get(sid, 0))
+                    for sid in stop_waiting
+                    if stop_waiting[sid] - stop_boarded.get(sid, 0) > 0
+                }
+
+                routes_out.append({
+                    "route_id": rd["route_id"],
+                    "direction_id": rd["direction_id"],
+                    "time": str(rd["time"]),
+                    "vehicle_predictions": list(vehicles.values()),
+                    "stranded_at_stops": stranded,
+                })
+            return {"routes": routes_out}
+
+
+def query_predictions_for_route(pool, route_id: str, direction_id: int = 0) -> dict:
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT DISTINCT ON (1) time
+                FROM predictions
+                WHERE route_id = %s AND direction_id = %s
+                ORDER BY 1 DESC LIMIT 1
+            """, (route_id, direction_id))
+            row = _rows(cur)
+            if not row:
+                return {"vehicle_predictions": [], "stops": [], "stranded_at_stops": {}}
+            ts = row[0]["time"]
+
+            cur.execute("""
+                SELECT vehicle_id, stop_id, stop_sequence,
+                       predicted_passengers, vehicle_capacity,
+                       predicted_occupancy_pct, waiting_at_stop,
+                       boarded, alighted, has_data, confidence
+                FROM predictions
+                WHERE route_id = %s AND direction_id = %s AND time = %s
+                ORDER BY vehicle_id, stop_sequence
+            """, (route_id, direction_id, ts))
+            rows = _rows(cur)
+
+            vehicles = {}
+            stop_set = {}
+            stop_waiting: dict[str, int] = {}
+            stop_boarded: dict[str, int] = {}
+            for r in rows:
+                vid = r["vehicle_id"]
+                if vid not in vehicles:
+                    vehicles[vid] = {
+                        "vehicle_id": vid,
+                        "vehicle_capacity": r["vehicle_capacity"],
+                        "confidence": r["confidence"],
+                        "peak_occupancy_pct": 0,
+                        "stops": [],
+                    }
+                vp = vehicles[vid]
+                occ = r["predicted_occupancy_pct"] or 0
+                if occ > vp["peak_occupancy_pct"]:
+                    vp["peak_occupancy_pct"] = occ
+                vp["stops"].append({
+                    "stop_id": r["stop_id"],
+                    "stop_sequence": r["stop_sequence"],
+                    "predicted_passengers": r["predicted_passengers"],
+                    "boarded": r["boarded"],
+                    "alighted": r["alighted"],
+                    "has_data": r["has_data"],
+                })
+                sid = r["stop_id"]
+                if sid not in stop_set:
+                    stop_set[sid] = {
+                        "stop_id": sid,
+                        "stop_sequence": r["stop_sequence"],
+                        "people_waiting": r["waiting_at_stop"],
+                    }
+                waiting = r["waiting_at_stop"] or 0
+                boarded = r["boarded"] or 0
+                if sid not in stop_waiting:
+                    stop_waiting[sid] = waiting
+                stop_boarded[sid] = stop_boarded.get(sid, 0) + boarded
+
+            stranded = {
+                sid: max(0, stop_waiting[sid] - stop_boarded.get(sid, 0))
+                for sid in stop_waiting
+                if stop_waiting[sid] - stop_boarded.get(sid, 0) > 0
+            }
+
+            return {
+                "vehicle_predictions": list(vehicles.values()),
+                "stops": sorted(stop_set.values(), key=lambda s: s["stop_sequence"]),
+                "stranded_at_stops": stranded,
+            }
+
+
+def query_scheduler_decisions(pool, limit: int = 50) -> list[dict]:
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, decided_at, decision_type, route_id, direction_id,
+                       trigger_vehicle_id, trigger_stop_id,
+                       predicted_passengers, predicted_occupancy_pct,
+                       vehicle_capacity, total_stranded, threshold,
+                       message, status, executed_at
+                FROM scheduler_decisions
+                ORDER BY decided_at DESC LIMIT %s
+            """, (limit,))
+            return [
+                {**r, "decided_at": str(r["decided_at"]),
+                 "executed_at": str(r["executed_at"]) if r["executed_at"] else None}
+                for r in _rows(cur)
+            ]
+
+
+def query_delay_data(pool, route_id: str | None = None, hours: int = 24) -> list[dict]:
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            if route_id:
+                # Filter by stops that belong to the selected route via
+                # route_stops, because GTFS-RT trip-update route IDs may
+                # differ from the static GTFS route IDs.
+                cur.execute("""
+                    SELECT tu.stop_id, s.stop_name,
+                           EXTRACT(HOUR FROM tu.time)::int AS hour,
+                           AVG(tu.arrival_delay) AS avg_delay
+                    FROM gtfs_rt_trip_updates tu
+                    JOIN stops s ON s.stop_id = tu.stop_id
+                    WHERE tu.stop_id IN (
+                              SELECT rs.stop_id FROM route_stops rs
+                              WHERE rs.route_id = %s
+                          )
+                      AND tu.time > NOW() - make_interval(hours => %s)
+                      AND tu.arrival_delay IS NOT NULL
+                    GROUP BY tu.stop_id, s.stop_name, hour
+                    ORDER BY tu.stop_id, hour
+                """, (route_id, hours))
+            else:
+                cur.execute("""
+                    SELECT tu.stop_id, s.stop_name,
+                           AVG(tu.arrival_delay) AS avg_delay
+                    FROM gtfs_rt_trip_updates tu
+                    JOIN stops s ON s.stop_id = tu.stop_id
+                    WHERE tu.time > NOW() - make_interval(hours => %s)
+                      AND tu.arrival_delay IS NOT NULL
+                    GROUP BY tu.stop_id, s.stop_name
+                    ORDER BY avg_delay DESC
+                    LIMIT 15
+                """, (hours,))
+
+            rows = _rows(cur)
+
+            if route_id:
+                stop_map = {}
+                for r in rows:
+                    sid = r["stop_id"]
+                    if sid not in stop_map:
+                        stop_map[sid] = {"stop_id": sid, "stop_name": r["stop_name"], "hours": []}
+                    stop_map[sid]["hours"].append({"hour": r["hour"], "avg_delay": round(r["avg_delay"] or 0, 1)})
+                return list(stop_map.values())
+            else:
+                return [
+                    {"stop_id": r["stop_id"], "stop_name": r["stop_name"],
+                     "avg_delay": round(r["avg_delay"] or 0, 1)}
+                    for r in rows
+                ]
+
+
+def query_on_time(pool, route_id: str | None = None, hours: int = 24) -> list[dict]:
+    """Hourly on-time percentage, optionally scoped to a route's stops."""
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            if route_id:
+                cur.execute("""
+                    SELECT time_bucket('1 hour', tu.time) AS bucket,
+                           COUNT(*) AS total,
+                           COUNT(*) FILTER (
+                               WHERE ABS(COALESCE(tu.arrival_delay, 0)) < 300
+                           ) AS on_time
+                    FROM gtfs_rt_trip_updates tu
+                    WHERE tu.stop_id IN (
+                              SELECT rs.stop_id FROM route_stops rs
+                              WHERE rs.route_id = %s
+                          )
+                      AND tu.time > NOW() - make_interval(hours => %s)
+                    GROUP BY bucket
+                    ORDER BY bucket
+                """, (route_id, hours))
+            else:
+                cur.execute("""
+                    SELECT time_bucket('1 hour', tu.time) AS bucket,
+                           COUNT(*) AS total,
+                           COUNT(*) FILTER (
+                               WHERE ABS(COALESCE(tu.arrival_delay, 0)) < 300
+                           ) AS on_time
+                    FROM gtfs_rt_trip_updates tu
+                    WHERE tu.time > NOW() - make_interval(hours => %s)
+                    GROUP BY bucket
+                    ORDER BY bucket
+                """, (hours,))
+
+            return [
+                {
+                    "time": _hour_label(r["bucket"]),
+                    "onTimePercent": round(
+                        r["on_time"] / max(r["total"], 1) * 100, 1
+                    ),
+                }
+                for r in _rows(cur)
+            ]
+
+
+def query_gtfs_rt_freshness(pool) -> dict:
+    """Return the timestamp of the most recent GTFS-RT trip update row."""
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT MAX(time) AS latest FROM gtfs_rt_trip_updates")
+            row = _rows(cur)
+            ts = row[0]["latest"] if row else None
+            return {"latest": str(ts) if ts else None}
+
+
+def query_service_alerts(pool) -> list[dict]:
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, alert_id, received_at, cause, effect,
+                       header_text, description_text, severity,
+                       active_period_start, active_period_end
+                FROM gtfs_rt_service_alerts
+                ORDER BY received_at DESC LIMIT 50
+            """)
+            return [{**r, "received_at": str(r["received_at"]),
+                     "active_period_start": str(r["active_period_start"]) if r["active_period_start"] else None,
+                     "active_period_end": str(r["active_period_end"]) if r["active_period_end"] else None}
+                    for r in _rows(cur)]
+
+
+def query_devices(pool) -> list[dict]:
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT device_id, stop_id, stop_name, stop_lat, stop_long,
+                       transport_type, zone, is_online, pipeline_active,
+                       last_seen, config
+                FROM stops
+                ORDER BY stop_name
+            """)
+            return [{**r, "last_seen": str(r["last_seen"]) if r["last_seen"] else None}
+                    for r in _rows(cur)]
+
+
+def query_device_logs(pool, device_id: str, limit: int = 100) -> list[dict]:
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT time, level, message, extra
+                FROM stop_logs
+                WHERE device_id = %s
+                ORDER BY time DESC LIMIT %s
+            """, (device_id, limit))
+            return [{"time": str(r["time"]), "level": r["level"], "message": r["message"]}
+                    for r in _rows(cur)]
+
+
+def query_models(pool) -> list[dict]:
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, filename, sha256, file_size, uploaded_at, is_active
+                FROM model_versions
+                ORDER BY uploaded_at DESC
+            """)
+            return [{**r, "uploaded_at": str(r["uploaded_at"]) if r["uploaded_at"] else None}
+                    for r in _rows(cur)]
+
+
+def query_all_alerts(pool) -> list[dict]:
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, severity, message, source, device_id, route_id,
+                       created_at, resolved_at
+                FROM system_alerts
+                ORDER BY created_at DESC LIMIT 100
+            """)
+            return [{**r, "created_at": str(r["created_at"]),
+                     "resolved_at": str(r["resolved_at"]) if r["resolved_at"] else None}
+                    for r in _rows(cur)]
+
+
+def query_admin_log(pool, limit: int = 100) -> list[dict]:
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, occurred_at, target_device_id, action, command,
+                       result, initiated_by
+                FROM admin_activity_log
+                ORDER BY occurred_at DESC LIMIT %s
+            """, (limit,))
+            return [{**r, "occurred_at": str(r["occurred_at"])} for r in _rows(cur)]
+
+
+def resolve_alert(pool, alert_id: int):
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE system_alerts SET resolved_at = NOW()
+                WHERE id = %s AND resolved_at IS NULL
+            """, (alert_id,))
+            cur.execute("NOTIFY dashboard_update, 'alert_resolved'")
+        conn.commit()
 
 
 # ---------------------------------------------------------------------------

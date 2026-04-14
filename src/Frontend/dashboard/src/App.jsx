@@ -1,22 +1,19 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { subscribeToDashboard } from './services/dataService';
 import HeaderBar from './components/HeaderBar';
-import StationPanel from './components/StationPanel';
-import MapView from './components/MapView';
-import CenterCharts from './components/CenterCharts';
-import FleetOverview from './components/FleetOverview';
-import PerformanceMetrics from './components/PerformanceMetrics';
-import RouteHealth from './components/RouteHealth';
-import CrowdingHotspots from './components/CrowdingHotspots';
 import AlertBar from './components/AlertBar';
+import HomePage from './pages/HomePage';
+import AnalyticsPage from './pages/AnalyticsPage';
+import SchedulingPage from './pages/SchedulingPage';
+import CommandPanelPage from './pages/CommandPanelPage';
 import './App.css';
 
-export default function App() {
+function AppShell() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
   const [filter, setFilter] = useState('all');
-  const [mapFullscreen, setMapFullscreen] = useState(false);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -84,49 +81,23 @@ export default function App() {
       {error && <div className="error-strip">{error}</div>}
 
       <div className="dashboard-content">
-        <main className={`dashboard-grid${mapFullscreen ? ' dashboard-grid--hidden' : ''}`}>
-          <div className="left-column">
-            <StationPanel stops={filtered.stops} stopWaitCounts={filtered.stopWaitCounts} />
-            <RouteHealth routeHealth={filtered.routeHealth} />
-            <CrowdingHotspots hotspots={filtered.crowdingHotspots} />
-          </div>
-
-          <div className="center-column">
-            <div className="map-section">
-              <MapView
-                stops={filtered.stops}
-                stopWaitCounts={filtered.stopWaitCounts}
-                vehicles={filtered.vehicles}
-                theme={theme}
-                onToggleFullscreen={() => setMapFullscreen(true)}
-              />
-            </div>
-            <CenterCharts
-              resourceEfficiency={filtered.resourceEfficiency}
-              onTimeData={filtered.onTimeData}
-              theme={theme}
-            />
-          </div>
-
-          <div className="right-column">
-            <FleetOverview vehicles={filtered.vehicles} />
-            <PerformanceMetrics fleetUtilization={filtered.fleetUtilization} theme={theme} />
-          </div>
-        </main>
-
-        <div className={`map-fullscreen-overlay${mapFullscreen ? ' map-fullscreen-overlay--active' : ''}`}>
-          <MapView
-            stops={filtered.stops}
-            stopWaitCounts={filtered.stopWaitCounts}
-            vehicles={filtered.vehicles}
-            theme={theme}
-            isFullscreen={mapFullscreen}
-            onToggleFullscreen={() => setMapFullscreen(false)}
-          />
-        </div>
+        <Routes>
+          <Route path="/" element={<HomePage data={filtered} theme={theme} />} />
+          <Route path="/analytics" element={<AnalyticsPage data={filtered} theme={theme} />} />
+          <Route path="/scheduling" element={<SchedulingPage data={filtered} theme={theme} />} />
+          <Route path="/controls" element={<CommandPanelPage data={filtered} theme={theme} />} />
+        </Routes>
       </div>
 
       <AlertBar alerts={filtered.alerts} />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppShell />
+    </BrowserRouter>
   );
 }
