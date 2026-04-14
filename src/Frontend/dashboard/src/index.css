@@ -1,0 +1,63 @@
+/* ============================================================
+   Global / reset styles
+   ============================================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ---------- Light theme (default) ---------- */
+:root {
+  --bg: #f8f6fb;
+  --surface: #ffffff;
+  --surface-hover: rgba(144, 99, 255, 0.05);
+  --border: rgba(57, 32, 97, 0.1);
+  --text: #1a1b25;
+  --text-muted: rgba(57, 32, 97, 0.5);
+  --accent: #9063ff;
+  --accent-soft: #d7a6b3;
+  --chart-grid: rgba(57, 32, 97, 0.08);
+  --chart-tooltip-bg: #ffffff;
+  --chart-tooltip-border: rgba(57, 32, 97, 0.12);
+  --chart-tick: rgba(57, 32, 97, 0.45);
+  --danger: #ef4444;
+  --warning: #d7a6b3;
+  --success: #9063ff;
+
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  color: var(--text);
+  background-color: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---------- Dark theme ---------- */
+[data-theme='dark'] {
+  --bg: #1a1b25;
+  --surface: #222336;
+  --surface-hover: rgba(144, 99, 255, 0.1);
+  --border: rgba(144, 99, 255, 0.15);
+  --text: #f0e4df;
+  --text-muted: rgba(215, 166, 179, 0.78);
+  --accent: #9063ff;
+  --accent-soft: #d7a6b3;
+  --chart-grid: rgba(144, 99, 255, 0.12);
+  --chart-tooltip-bg: #2a2b44;
+  --chart-tooltip-border: rgba(144, 99, 255, 0.2);
+  --chart-tick: rgba(229, 205, 200, 0.65);
+}
+
+body {
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}

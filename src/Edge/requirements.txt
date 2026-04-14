@@ -1,0 +1,14 @@
+# MQTT
+paho-mqtt>=2.0
+
+# ML / Inference (versions from InferProto Dockerfile)
+ultralytics==8.3.228
+torch==2.9.1
+torchvision==0.24.1
+# For CUDA support, install torch/torchvision from the PyTorch index:
+#   pip install torch==2.9.1+cu128 torchvision==0.24.1+cu128 --index-url https://download.pytorch.org/whl/cu128
+
+# Image processing
+opencv-python==4.12.0.88
+numpy==2.2.6
+Pillow==12.0.0

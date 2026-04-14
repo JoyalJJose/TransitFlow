@@ -1,0 +1,4 @@
+# *** TEST / DEV DEPENDENCIES - can be removed after testing ***
+paho-mqtt>=2.0
+pytest>=9.0
+psycopg2-binary>=2.9

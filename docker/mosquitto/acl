@@ -1,0 +1,9 @@
+# TransitFlow MQTT Access Control List
+# Placeholder -- currently allow_anonymous is true so this file is not enforced.
+# Enable by adding `acl_file /mosquitto/config/acl` to mosquitto.conf
+# and setting `allow_anonymous false`.
+
+# Example rules:
+# topic readwrite edge/#
+# user backend
+# topic readwrite edge/#

@@ -1,0 +1,40 @@
+name: fyp
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: transitflow-mqtt-broker
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8883:8883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/acl:/mosquitto/config/acl:ro
+      - ./mosquitto/certs:/mosquitto/certs:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: transitflow-db
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_DB: transitflow
+      POSTGRES_USER: transitflow
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-transitflow_dev}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U transitflow -d transitflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  mosquitto-data:
+  mosquitto-log:
+  pgdata:

@@ -1,0 +1,58 @@
+# Secrets / environment files
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE / Editor
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+*~
+
+# pytest
+.pytest_cache/
+
+# Model weights (large binaries)
+*.pt
+*.pth
+*.onnx
+
+# Datasets (large -- 1GB+)
+data/
+
+# TLS certs (generated per-environment)
+docker/mosquitto/certs/*.crt
+docker/mosquitto/certs/*.key
+docker/mosquitto/certs/*.csr
+docker/mosquitto/certs/*.srl
+
+# Runtime artifacts created by backend/tests
+received/
+logs/
+*.log
+gtfsr_sample_output.txt
+gtfsr_test_results.txt
+
+# OS files
+.DS_Store
+Thumbs.db
+
+
+# Ignore documentation/reference markdown
+src/Frontend/REACT_VITE_COMMANDS.md
