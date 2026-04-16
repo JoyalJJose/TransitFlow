@@ -1,0 +1,41 @@
+# *** TEST / DEV CONFIG - can be removed after testing ***
+# Test configuration: pytest markers, discovery, and coverage settings.
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+markers = [
+    "unit: fast isolated tests with no Docker / DB / network",
+    "integration: DB-backed tests that require Docker (TimescaleDB)",
+    "e2e: end-to-end tests over a real MQTT broker (requires Docker)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+omit = [
+    "*/__main__.py",
+    "*/config.py",
+    "*/seed.py",
+    "*/seed_test_data.py",
+    "src/Simulator/main.py",
+    "src/Edge/main.py",
+    "src/Backend/MQTTBroker/main.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+precision = 1
+show_missing = true
+skip_empty = true
+
+[tool.coverage.html]
+directory = "htmlcov"

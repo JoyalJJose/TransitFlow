@@ -1,0 +1,73 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.7, pytest-9.0.3, pluggy-1.6.0
+rootdir: c:\Users\Joyal\Desktop\FYP-Final\TransitFlow
+configfile: pyproject.toml
+plugins: anyio-4.13.0, cov-7.1.0
+collected 268 items / 26 deselected / 242 selected
+
+tests\api\test_main.py .......                                           [  2%]
+tests\api\test_queries.py ......................                         [ 11%]
+tests\api\test_ws.py ....                                                [ 13%]
+tests\database\test_database_unit.py ......................              [ 22%]
+tests\edge\test_edge_system.py ...................................       [ 37%]
+tests\gtfs_rt\test_fetcher.py .............                              [ 42%]
+tests\gtfs_rt\test_main.py .......                                       [ 45%]
+tests\prediction\test_prediction_engine.py ............................. [ 57%]
+....................................                                     [ 72%]
+tests\prediction\test_proportional_split.py ..........                   [ 76%]
+tests\prediction\test_snapshot_builder.py ............                   [ 81%]
+tests\simulator\test_generator.py ..........                             [ 85%]
+tests\simulator\test_orchestrator.py ......                              [ 88%]
+tests\simulator\test_profiles.py .................                       [ 95%]
+tests\supervisor\test_supervisor.py ............                         [100%]
+
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.13.7-final-0 _______________
+
+Name                                               Stmts   Miss Branch BrPart  Cover   Missing
+----------------------------------------------------------------------------------------------
+src\Backend\API\main.py                              168     70     14      1  55.5%   59-63, 70-94, 103-108, 113, 119-129, 141-163, 182->189, 225, 231, 237, 243, 249, 255, 261, 267, 273, 279, 285, 291, 297, 303-305, 330-331, 336, 341-342
+src\Backend\API\queries.py                           293    143     72      6  48.2%   279-290, 294-295, 326-336, 340-341, 363-366, 416, 427-498, 502-571, 579-590, 598-643, 652-683, 705-714, 721-730, 735-743, 748-755, 760-768, 774-782, 786-793
+src\Backend\API\ws.py                                 51     16      6      0  71.9%   45-46, 57-75
+src\Backend\Database\__init__.py                       3      0      0      0 100.0%
+src\Backend\Database\connection.py                    30      0      4      1  97.1%   47->exit
+src\Backend\Database\writer.py                       185     90     20      0  48.3%   95-96, 145-146, 159-160, 182-183, 206-207, 231-232, 246-292, 300-327, 344-371, 384-400, 409-459, 469-506, 526-527
+src\Backend\GTFS_RT\fetcher.py                        61      0     10      0 100.0%
+src\Backend\GTFS_RT\main.py                           93     52     22      0  40.9%   91-177
+src\Backend\MQTTBroker\broker_handler.py             192    114     44      4  34.7%   77, 82-85, 93, 96, 99, 103->exit, 109-123, 126-129, 132-152, 161->exit, 169-172, 175-203, 206-224, 227-248, 252-278, 287, 300->316, 309->316, 313-314, 320-321
+src\Backend\PredictionEngine\__init__.py               5      0      0      0 100.0%
+src\Backend\PredictionEngine\engine.py                64      0     22      0 100.0%
+src\Backend\PredictionEngine\evaluator.py             56      0     16      1  98.6%   43->exit
+src\Backend\PredictionEngine\snapshot.py              44      0      0      0 100.0%
+src\Backend\PredictionEngine\snapshot_builder.py      90      4     30      4  93.3%   70, 181, 262, 285
+src\Backend\runtime_supervisor.py                    190    118     58      4  33.1%   117->122, 122->124, 129->136, 136->exit, 144-270, 276-341
+src\Edge\camera.py                                    66      4     14      3  91.2%   77-78, 82-83, 95->98, 98->101
+src\Edge\comms.py                                    139     91     24      0  30.7%   30-64, 70, 74-77, 85, 88, 91, 94-100, 105-131, 134-139, 142-150, 159, 162-168, 174, 177-194, 202-209, 216-237, 241-256, 260, 286-287
+src\Edge\inference.py                                 33     33      0      0   0.0%   6-85
+src\Edge\model_manager.py                             46      0      4      1  98.0%   74->78
+src\Edge\model_receiver.py                           119     29     16      5  74.8%   59-61, 85-86, 94-100, 104-105, 144-148, 153-162, 173-174, 187-194, 203-204, 209->211, 215-218
+src\Simulator\generator.py                            40      0      2      0 100.0%
+src\Simulator\orchestrator.py                         97     12     18      2  84.3%   72-86, 92, 151->156
+src\Simulator\profiles.py                             29      1     10      1  94.9%   55
+----------------------------------------------------------------------------------------------
+TOTAL                                               2094    777    406     33  60.1%
+
+5 empty files skipped.
+Coverage HTML written to dir htmlcov
+============================ slowest 15 durations =============================
+29.71s call     tests/simulator/test_orchestrator.py::TestBackfill::test_payload_format
+29.69s call     tests/simulator/test_orchestrator.py::TestBackfill::test_publishes_for_every_stop
+29.67s call     tests/simulator/test_orchestrator.py::TestLogStats::test_does_not_raise
+0.35s call     tests/edge/test_edge_system.py::TestThermalCameraPipelineControl::test_pipeline_inactive_skips_capture
+0.30s call     tests/edge/test_edge_system.py::TestThermalCameraPipelineControl::test_pipeline_active_produces_frames
+0.16s setup    tests/api/test_main.py::TestHealth::test_health_ok_when_db_reachable
+0.10s call     tests/edge/test_edge_system.py::TestCrowdCounterPauseResume::test_pause_blocks_count
+0.06s call     tests/edge/test_edge_system.py::TestFrameBuffer::test_get_returns_none_on_timeout
+0.06s call     tests/edge/test_edge_system.py::TestFrameBuffer::test_consumed_after_get
+0.06s call     tests/edge/test_edge_system.py::TestModelReceiverCallback::test_on_model_ready_called_after_successful_transfer
+0.05s call     tests/edge/test_edge_system.py::TestFrameBuffer::test_producer_consumer_across_threads
+0.03s call     tests/edge/test_edge_system.py::TestModelReceiverCallback::test_on_model_ready_not_called_when_none
+0.03s call     tests/edge/test_edge_system.py::TestModelReceiverCallback::test_ack_published_on_success
+0.02s call     tests/database/test_database_unit.py::TestBrokerHandlerDB::test_init_with_db_available
+0.01s call     tests/api/test_main.py::TestHealth::test_health_ok_when_db_reachable
+================ 242 passed, 26 deselected in 92.21s (0:01:32) ================

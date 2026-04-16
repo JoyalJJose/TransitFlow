@@ -59,3 +59,14 @@ src/Frontend/REACT_VITE_COMMANDS.md
 
 # Database backups
 backups/
+
+# Local temp and coverage artifacts
+coverage/
+.coverage*
+*.tmp
+*.bak
+*.sqlite*
+
+
+# Documentation
+docs/PROJECT_OVERVIEW.md

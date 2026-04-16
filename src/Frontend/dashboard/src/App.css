@@ -1087,12 +1087,82 @@
 }
 
 /* ============================================================
+   System Stats panel (top of left column)
+   ============================================================ */
+
+.system-stats-panel {
+  flex-shrink: 0;
+  height: 84px;
+}
+
+.system-stats-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.45rem 0.65rem;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.system-stats-uptime-val {
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.system-stats-uptime-label {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.2rem;
+}
+
+.system-stats-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.system-stats-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.system-stats-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border);
+}
+.system-stats-dot-ok    { background: var(--online); }
+.system-stats-dot-warn  { background: var(--warning); }
+.system-stats-dot-down  { background: var(--danger); }
+
+.system-stats-ws {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--surface-hover);
+  padding: 0.08rem 0.4rem;
+  border-radius: 8px;
+}
+
+/* ============================================================
    Active Routes panel (replaces Route Health)
    ============================================================ */
 
 .active-routes-panel {
   flex-shrink: 0;
-  max-height: 260px;
+  max-height: 216px;
   overflow-y: auto;
 }
 
@@ -1270,7 +1340,7 @@
 
 .hotspots-panel {
   flex-shrink: 0;
-  max-height: 180px;
+  max-height: 164px;
   overflow-y: auto;
 }
 

@@ -38,7 +38,14 @@ fail() { echo -e "  ${RED}✗${NC} $*"; exit 1; }
 
 # Track background PIDs for cleanup
 PIDS=()
+CLEANUP_DONE=0
 cleanup() {
+    if [ "$CLEANUP_DONE" -eq 1 ]; then
+        return
+    fi
+    CLEANUP_DONE=1
+    trap - EXIT INT TERM
+
     echo ""
     log "Shutting down…"
     for pid in "${PIDS[@]}"; do

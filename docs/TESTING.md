@@ -2,29 +2,19 @@
 
 ## Overview
 
-Nine pytest-based test suites covering the TransitFlow system:
+Five pytest-based test suites covering the TransitFlow system:
 
 1. **Edge unit tests** (`tests/edge/`) -- 35 tests for all edge device modules (RuntimeSettings, FrameBuffer, MQTTLogHandler, ModelManager, ModelReceiver callback, CrowdCounter pause/resume, ThermalCamera pipeline control, admin dispatch, backward compatibility). Runs without Docker, YOLO, or a camera -- all external dependencies are mocked.
 
 2. **Database unit tests** (`tests/database/`) -- 22 tests for the Database module (ConnectionPool, DatabaseWriter, BrokerHandler DB integration). All database interactions are mocked -- no Docker or running database required.
 
-3. **Prediction unit tests** (`tests/prediction/`) -- 87 tests for the PredictionEngine module (65 sequential-simulation / evaluator tests, 10 `proportional_split` unit tests, and 12 SnapshotBuilder tests with a fully mocked ConnectionPool). Pure Python -- no Docker, database, or external dependencies.
+3. **Prediction unit tests** (`tests/prediction/`) -- 65 tests for the PredictionEngine module (sequential simulation algorithm, alighting model, edge cases, conservation invariants, evaluator thresholds, evaluator registry per-route dispatch, end-to-end flows). Pure Python -- no Docker, database, or external dependencies.
 
 4. **Simulator unit tests** (`tests/simulator/`) -- 33 tests for the crowd count simulator (time-of-day demand profiles, interpolation smoothness, position weighting, multi-route multipliers, base capacity, StopSimulator random walk, temporal coherence, vehicle dips, Orchestrator stop building, deduplication, staggered scheduling, backfill). Pure Python -- no Docker, MQTT, or database required.
 
-5. **API unit tests** (`tests/api/`) -- 33 tests for the FastAPI dashboard layer: all `queries.py` helpers with a mocked cursor, the `ConnectionManager` WebSocket hub (connect / disconnect / broadcast / stale eviction), the `/api/health` route, `/api/stops/{id}/history`, CORS, admin-command and prediction-config routes. Runs without Docker or a running DB.
-
-6. **GTFS-RT unit tests** (`tests/gtfs_rt/`) -- 20 tests for the NTA GTFS-Realtime feed fetcher (protobuf parser, HTTP error handling, 60-second rate-limit guard, agency/route filtering, fetch-filter-write cycle). No live NTA calls -- `requests.get` is patched.
-
-7. **Supervisor unit tests** (`tests/supervisor/`) -- 12 tests for `Backend/runtime_supervisor.py` `_Worker` lifecycle (start, is_alive, restart-if-dead, graceful stop, kill-on-timeout, shutdown signal handling), trigger-payload filter, and log directory bootstrap. `subprocess.Popen` and `psycopg2.connect` are mocked.
-
-8. **Integration tests** (`tests/integration/`) -- DB-backed tests for SnapshotBuilder, PredictionEngine, Evaluator, DatabaseWriter prediction and scheduler writes, and the proportional crowd-splitting flow against a seeded TimescaleDB. Requires Docker.
-
-9. **MQTT integration tests** (`tests/mqtt/`) -- 11 end-to-end tests that automatically generate TLS certificates, start Mosquitto and TimescaleDB Docker containers, run tests for every MQTT message flow, then tear down Docker (including volumes) and clean up artifacts.
+5. **MQTT integration tests** (`tests/mqtt/`) -- 11 end-to-end tests that automatically generate TLS certificates, start Mosquitto and TimescaleDB Docker containers, run tests for every MQTT message flow, then tear down Docker (including volumes) and clean up artifacts.
 
 All test files are marked with `# *** TEST FILE - SAFE TO DELETE ***` headers.
-
-Categories are applied automatically by `tests/conftest.py` based on the containing directory (unit / integration / e2e). Filter with `pytest -m unit`, `pytest -m integration`, or `pytest -m e2e`.
 
 
 ## System Under Test
@@ -553,36 +543,7 @@ tests/mqtt/test_mqtt_system.py::TestModelTransfer::test_model_multi_chunk       
 pytest tests/ -v --tb=short
 ```
 
-This runs all 268 tests across nine suites:
-
-- **Unit (242 tests, ~90 s)** -- 35 edge + 22 database + 87 prediction (65 engine + 10 split + 12 builder) + 33 simulator + 33 API + 20 GTFS-RT + 12 supervisor.
-- **Integration (~15 tests, ~45 s, Docker required)** -- end-to-end SnapshotBuilder -> Engine -> Evaluator -> Writer pipeline against a seeded TimescaleDB.
-- **End-to-end (11 tests, ~33 s, Docker required)** -- full MQTT wire over a real Mosquitto broker with TLS.
-
-### Run a category
-
-```bash
-pytest tests/ -m unit            # fast, no Docker
-pytest tests/ -m integration     # Docker TimescaleDB
-pytest tests/ -m e2e             # Docker Mosquitto + TimescaleDB
-```
-
-### Coverage report
-
-Branch coverage is configured in `pyproject.toml` and produced by `pytest-cov`:
-
-```bash
-# Terminal report only
-pytest tests/ -m unit --cov --cov-report=term-missing
-
-# Terminal + browsable HTML in htmlcov/
-pytest tests/ -m unit --cov --cov-report=term --cov-report=html
-
-# Slowest 20 tests (useful for spotting slow fixtures)
-pytest tests/ -m unit --durations=20
-```
-
-Latest unit-only run: **242 passed in ~92 s, 60.1 % overall line coverage** with branch tracking enabled. Pure-logic modules (Prediction engine, evaluator, snapshot builder, GTFS-RT fetcher, Database connection pool, Simulator) are at 90+ % coverage; orchestration loops (`runtime_supervisor`, API lifespan, `GTFS_RT/main`) are exercised primarily at the integration layer.
+This runs all 166 tests (35 edge unit + 22 database unit + 65 prediction unit + 33 simulator unit + 11 MQTT integration). The MQTT tests require Docker to be available.
 
 
 ## Bug Found During Testing
@@ -608,9 +569,9 @@ Files changed:
 To remove all test files after testing:
 
 ```bash
-rm -rf tests/ htmlcov/ .pytest_cache/ .coverage
-rm pyproject.toml requirements-dev.txt
-rm TESTING.md TESTING_PLAN.md
+rm -rf tests/
+rm requirements-dev.txt
+rm TESTING.md
 ```
 
 The generated TLS certs in `docker/mosquitto/certs/` should be kept (needed for production use). Test artifacts (`received/`, `models/`) are auto-cleaned by the MQTT session fixture teardown.
@@ -627,13 +588,9 @@ rm -rf .venv
 ```
 TransitFlow/
   .venv/                          # Python virtual environment
-  pyproject.toml                  # pytest markers + coverage config
   requirements-dev.txt            # Test dependencies
-  TESTING_PLAN.md                 # FYP-style testing chapter
-  htmlcov/                        # Generated by --cov-report=html
   tests/
     __init__.py
-    conftest.py                   # Auto-marks tests by directory
     edge/
       __init__.py
       conftest.py                 # Edge fixtures + dependency mocks
@@ -644,33 +601,13 @@ TransitFlow/
     prediction/
       conftest.py                 # Snapshot helpers + engine fixture
       test_prediction_engine.py   # 65 unit tests
-      test_proportional_split.py  # 10 unit tests for split helper
-      test_snapshot_builder.py    # 12 unit tests with mocked pool
     simulator/
       __init__.py
       test_profiles.py            # Demand curves, weighting, multipliers
       test_generator.py           # StopSimulator random walk + dips
       test_orchestrator.py        # Stop building, dedup, backfill
-    api/
-      __init__.py
-      conftest.py                 # Mocked pool with QueueCursor
-      test_queries.py             # 22 dashboard-payload helper tests
-      test_ws.py                  # 4 ConnectionManager tests
-      test_main.py                # 7 FastAPI route + CORS tests
-    gtfs_rt/
-      __init__.py
-      conftest.py                 # Real protobuf factory + path setup
-      test_fetcher.py             # 13 fetch / parse / rate-limit tests
-      test_main.py                # 7 _load_route_filter + _fetch_cycle tests
-    supervisor/
-      __init__.py
-      conftest.py                 # Path setup
-      test_supervisor.py          # 12 _Worker + trigger + log tests
-    integration/
-      conftest.py                 # Docker TimescaleDB + GTFS seeding
-      test_system_integration.py  # End-to-end pipeline tests
     mqtt/
       __init__.py
       conftest.py                 # Session + function fixtures (Docker)
-      test_mqtt_system.py         # 11 end-to-end tests
+      test_mqtt_system.py         # 11 integration tests
 ```

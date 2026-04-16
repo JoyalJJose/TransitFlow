@@ -15,6 +15,8 @@ import json
 import logging
 import os
 import sys
+import time
+from datetime import datetime, timezone
 
 from contextlib import asynccontextmanager
 
@@ -45,6 +47,10 @@ _listener_task: asyncio.Task | None = None
 
 # Cached payload to avoid redundant queries on rapid connects.
 _cached_payload: str | None = None
+
+# Server start markers for uptime reporting.
+_started_at_monotonic = time.monotonic()
+_started_at_iso: str | None = None
 
 
 async def build_and_cache_payload() -> str:
@@ -129,7 +135,7 @@ async def _do_broadcast():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _pool, _listener_task
+    global _pool, _listener_task, _started_at_iso
 
     # 1. Open sync connection pool for queries.
     _pool = ConnectionPool()
@@ -137,6 +143,8 @@ async def lifespan(app: FastAPI):
 
     # 2. Start async LISTEN loop.
     _listener_task = asyncio.create_task(_listen_loop())
+
+    _started_at_iso = datetime.now(timezone.utc).isoformat()
 
     logger.info("API server started")
     yield
@@ -197,6 +205,8 @@ async def health():
         "gtfs_rt_poll_interval": int(os.environ.get("GTFSR_POLL_INTERVAL", "60")),
         "gtfs_rt_retain": int(os.environ.get("GTFSR_RETAIN_FETCHES", "20")),
         "gtfs_rt_timeout": int(os.environ.get("GTFSR_REQUEST_TIMEOUT", "30")),
+        "started_at": _started_at_iso,
+        "uptime_s": int(time.monotonic() - _started_at_monotonic),
     }
 
 

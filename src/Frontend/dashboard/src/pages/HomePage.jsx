@@ -6,6 +6,7 @@ import FleetOverview from '../components/FleetOverview';
 import PerformanceMetrics from '../components/PerformanceMetrics';
 import ActiveRoutes from '../components/ActiveRoutes';
 import CrowdingHotspots from '../components/CrowdingHotspots';
+import SystemStats from '../components/SystemStats';
 
 export default function HomePage({ data, theme }) {
   const [mapFullscreen, setMapFullscreen] = useState(false);
@@ -14,6 +15,7 @@ export default function HomePage({ data, theme }) {
     <>
       <main className={`dashboard-grid${mapFullscreen ? ' dashboard-grid--hidden' : ''}`}>
         <div className="left-column">
+          <SystemStats />
           <StationPanel stops={data.stops} stopWaitCounts={data.stopWaitCounts} />
           <ActiveRoutes routes={data.routes} vehicles={data.vehicles} />
           <CrowdingHotspots hotspots={data.crowdingHotspots} />
