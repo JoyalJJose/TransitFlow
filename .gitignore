@@ -56,3 +56,6 @@ Thumbs.db
 
 # Ignore documentation/reference markdown
 src/Frontend/REACT_VITE_COMMANDS.md
+
+# Database backups
+backups/

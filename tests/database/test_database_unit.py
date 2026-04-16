@@ -102,13 +102,13 @@ class TestConnectionPool:
 class TestDatabaseWriter:
 
     def test_write_crowd_count_inserts_and_upserts(self, writer_with_cache):
-        """write_crowd_count executes 2 SQL statements and commits."""
+        """write_crowd_count executes 2 SQL statements + NOTIFY and commits."""
         writer, mock_conn, mock_cursor = writer_with_cache
 
         ts = time.time()
         writer.write_crowd_count("dev-1", ts, 42, "zone-a")
 
-        assert mock_cursor.execute.call_count == 2
+        assert mock_cursor.execute.call_count == 3
 
         first_sql = mock_cursor.execute.call_args_list[0][0][0]
         assert "INSERT INTO crowd_count" in first_sql
@@ -116,6 +116,9 @@ class TestDatabaseWriter:
         second_sql = mock_cursor.execute.call_args_list[1][0][0]
         assert "INSERT INTO current_counts" in second_sql
         assert "ON CONFLICT" in second_sql
+
+        notify_sql = mock_cursor.execute.call_args_list[2][0][0]
+        assert "NOTIFY dashboard_update" in notify_sql
 
         mock_conn.commit.assert_called_once()
 
@@ -167,33 +170,41 @@ class TestDatabaseWriter:
         mock_conn.commit.assert_called_once()
 
     def test_upsert_stop(self, writer_with_cache):
-        """upsert_stop UPDATEs stops with is_online, last_seen, zone."""
+        """upsert_stop UPDATEs stops with is_online, last_seen, zone + NOTIFY."""
         writer, mock_conn, mock_cursor = writer_with_cache
 
         writer.upsert_stop("dev-1", is_online=True, zone="zone-b")
 
-        mock_cursor.execute.assert_called_once()
-        sql = mock_cursor.execute.call_args[0][0]
-        params = mock_cursor.execute.call_args[0][1]
+        assert mock_cursor.execute.call_count == 2
+        sql = mock_cursor.execute.call_args_list[0][0][0]
+        params = mock_cursor.execute.call_args_list[0][0][1]
 
         assert "UPDATE stops" in sql
         assert params[0] is True
         assert params[2] == "zone-b"
         assert params[3] == "dev-1"
+
+        notify_sql = mock_cursor.execute.call_args_list[1][0][0]
+        assert "NOTIFY dashboard_update" in notify_sql
+
         mock_conn.commit.assert_called_once()
 
     def test_update_pipeline_active(self, writer_with_cache):
-        """update_pipeline_active UPDATEs stops.pipeline_active."""
+        """update_pipeline_active UPDATEs stops.pipeline_active + NOTIFY."""
         writer, mock_conn, mock_cursor = writer_with_cache
 
         writer.update_pipeline_active("dev-1", True)
 
-        mock_cursor.execute.assert_called_once()
-        sql = mock_cursor.execute.call_args[0][0]
-        params = mock_cursor.execute.call_args[0][1]
+        assert mock_cursor.execute.call_count == 2
+        sql = mock_cursor.execute.call_args_list[0][0][0]
+        params = mock_cursor.execute.call_args_list[0][0][1]
 
         assert "pipeline_active" in sql
         assert params == (True, "dev-1")
+
+        notify_sql = mock_cursor.execute.call_args_list[1][0][0]
+        assert "NOTIFY dashboard_update" in notify_sql
+
         mock_conn.commit.assert_called_once()
 
     def test_log_admin_action(self, writer_with_cache):
@@ -230,32 +241,40 @@ class TestDatabaseWriter:
         mock_conn.commit.assert_called_once()
 
     def test_create_alert(self, writer_with_cache):
-        """create_alert inserts into system_alerts."""
+        """create_alert inserts into system_alerts + NOTIFY."""
         writer, mock_conn, mock_cursor = writer_with_cache
 
         writer.create_alert("critical", "High crowd", source="threshold", device_id="dev-1")
 
-        mock_cursor.execute.assert_called_once()
-        sql = mock_cursor.execute.call_args[0][0]
-        params = mock_cursor.execute.call_args[0][1]
+        assert mock_cursor.execute.call_count == 2
+        sql = mock_cursor.execute.call_args_list[0][0][0]
+        params = mock_cursor.execute.call_args_list[0][0][1]
 
         assert "INSERT INTO system_alerts" in sql
         assert params == ("critical", "High crowd", "threshold", "dev-1", None)
+
+        notify_sql = mock_cursor.execute.call_args_list[1][0][0]
+        assert "NOTIFY dashboard_update" in notify_sql
+
         mock_conn.commit.assert_called_once()
 
     def test_resolve_alert(self, writer_with_cache):
-        """resolve_alert UPDATEs resolved_at on system_alerts."""
+        """resolve_alert UPDATEs resolved_at on system_alerts + NOTIFY."""
         writer, mock_conn, mock_cursor = writer_with_cache
 
         writer.resolve_alert(42)
 
-        mock_cursor.execute.assert_called_once()
-        sql = mock_cursor.execute.call_args[0][0]
-        params = mock_cursor.execute.call_args[0][1]
+        assert mock_cursor.execute.call_count == 2
+        sql = mock_cursor.execute.call_args_list[0][0][0]
+        params = mock_cursor.execute.call_args_list[0][0][1]
 
         assert "UPDATE system_alerts" in sql
         assert "resolved_at" in sql
         assert params == (42,)
+
+        notify_sql = mock_cursor.execute.call_args_list[1][0][0]
+        assert "NOTIFY dashboard_update" in notify_sql
+
         mock_conn.commit.assert_called_once()
 
     def test_db_error_does_not_propagate(self, writer_with_cache):

@@ -80,19 +80,13 @@ class PredictionEngine:
 
         # Step 3 -- simulate each vehicle
         vehicle_predictions: list[VehiclePrediction] = []
+        skipped_seq: list[tuple[str, int]] = []
 
         for vehicle in sorted_vehicles:
             start_idx = seq_to_idx.get(vehicle.current_stop_sequence)
 
             if start_idx is None:
-                logger.warning(
-                    "Vehicle %s has current_stop_sequence=%d which is not in "
-                    "the route's stop list for route=%s direction=%d; skipping",
-                    vehicle.vehicle_id,
-                    vehicle.current_stop_sequence,
-                    snapshot.route_id,
-                    snapshot.direction_id,
-                )
+                skipped_seq.append((vehicle.vehicle_id, vehicle.current_stop_sequence))
                 continue
 
             if vehicle.capacity <= 0:
@@ -159,6 +153,17 @@ class PredictionEngine:
                     peak_occupancy_pct=peak_load / vehicle.capacity,
                     confidence=confidence,
                 )
+            )
+
+        if skipped_seq:
+            logger.debug(
+                "route=%s dir=%d: %d vehicle(s) skipped — stop_sequence "
+                "not in route_stops (sequences: %s)",
+                snapshot.route_id,
+                snapshot.direction_id,
+                len(skipped_seq),
+                ", ".join(str(s) for _, s in skipped_seq[:5])
+                + (" …" if len(skipped_seq) > 5 else ""),
             )
 
         # Step 4 -- stranded passengers

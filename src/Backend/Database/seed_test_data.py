@@ -95,6 +95,15 @@ def _fetch_route_stops(cur, route_id: str, direction_id: int) -> list[str]:
     return [r[0] for r in cur.fetchall()]
 
 
+def _fetch_route_stops_with_seq(cur, route_id: str, direction_id: int) -> list[tuple[str, int]]:
+    cur.execute("""
+        SELECT stop_id, stop_sequence FROM route_stops
+        WHERE route_id = %s AND direction_id = %s
+        ORDER BY stop_sequence
+    """, (route_id, direction_id))
+    return [(r[0], r[1]) for r in cur.fetchall()]
+
+
 def _fetch_all_stops(cur) -> list[dict]:
     cur.execute("SELECT device_id, stop_id, stop_name, transport_type FROM stops")
     cols = [d[0] for d in cur.description]
@@ -544,14 +553,13 @@ def seed_trip_updates(conn):
         for r in sample_routes:
             dirs = sorted(set(r["directions"]))
             for d in dirs:
-                stops = _fetch_route_stops(cur, r["route_id"], d)
-                if not stops:
+                stop_seqs = _fetch_route_stops_with_seq(cur, r["route_id"], d)
+                if not stop_seqs:
                     continue
-                # Generate hourly entries across 24h
                 for hour_offset in range(24):
                     ts = start + _dt.timedelta(hours=hour_offset, minutes=rng.randint(0, 30))
                     trip_id = f"seed-trip-{r['route_short_name']}-d{d}-h{hour_offset}"
-                    for seq, sid in enumerate(stops[:min(10, len(stops))]):
+                    for sid, seq in stop_seqs[:min(10, len(stop_seqs))]:
                         base_delay = rng.gauss(60, 120)
                         if 7.5 <= (ts.hour + ts.minute / 60) <= 9.5:
                             base_delay += rng.uniform(60, 300)

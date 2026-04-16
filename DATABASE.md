@@ -324,7 +324,7 @@ Examples: "Crowd count at Parnell Square exceeds 30", "Device edge-001 went offl
 
 #### `vehicles` -- Vehicle Registry and Current State
 
-Tracks every vehicle in the transit fleet. Updated by GTFS-RT feeds (future) and the Scheduler when deploying/removing vehicles. Maps to the dashboard's FleetOverview and the Scheduler/PredictionEngine's vehicle model.
+Tracks every vehicle in the transit fleet. Updated by runtime services (DatabaseWriter upserts from backend workflows), and intended to ingest GTFS-RT vehicle position updates when that writer path is completed. Maps to the dashboard's FleetOverview and the Scheduler/PredictionEngine's vehicle model.
 
 Modeled after the prototype's `Vehicle.java`: id, route, capacity, currentStop, state (ARRIVING/PRESENT/DEPARTING), passengerCount.
 
@@ -377,7 +377,7 @@ CREATE TABLE vehicle_telemetry (
 SELECT create_hypertable('vehicle_telemetry', 'time');
 ```
 
-Data source (future): Periodic snapshots from GTFS-RT vehicle positions or Scheduler state changes.
+Data source: Runtime writer snapshots (`DatabaseWriter.write_vehicle_telemetry`) produced by backend services. GTFS-RT vehicle-position driven snapshots remain an incremental enhancement.
 
 ### GTFS-RT Tables
 
@@ -495,7 +495,7 @@ SELECT create_hypertable('predictions', 'time');
 | `has_data` | Whether this stop had edge device data (affects confidence) |
 | `confidence` | Fraction of predicted stops that had edge device data |
 
-Data source: PredictionEngine (`src/Backend/PredictionEngine/`). The write path (persisting `VehiclePrediction` rows to this table) is a future integration task via `DatabaseWriter.write_prediction()`.
+Data source: PredictionEngine (`src/Backend/PredictionEngine/`) via runtime persistence (`DatabaseWriter.write_predictions()`), called by the runtime supervisor loop.
 
 #### `scheduler_decisions` -- Scheduling Decision Log
 
@@ -541,7 +541,7 @@ CREATE TABLE scheduler_decisions (
 | `status` | `'pending'`, `'scheduled'`, `'executed'`, `'cancelled'` |
 | `executed_at` | When the decision was actually carried out |
 
-Data source: EvaluatorRegistry (`src/Backend/PredictionEngine/evaluator.py`) produces `Alert` objects. The Scheduler (future integration) will consume alerts and write to this table. The `metadata` JSONB column stores the `Alert.trigger_detail` dict for audit purposes.
+Data source: EvaluatorRegistry (`src/Backend/PredictionEngine/evaluator.py`) produces `Alert` objects and runtime code persists decisions through `DatabaseWriter.write_scheduler_decision()`. The `metadata` JSONB column stores the `Alert.trigger_detail` dict for audit purposes.
 
 ## Dashboard Analytics Coverage
 
@@ -555,7 +555,7 @@ How each dashboard component maps to the database:
 | **FleetOverview** (vehicle occupancy buckets) | `vehicles` | `SELECT vehicle_id, occupancy_percent FROM vehicles WHERE is_active = true` |
 | **RouteHealth** (delay, headway, active vehicles) | `routes` + `vehicles` + `gtfs_rt_trip_updates` | Routes joined with active vehicle counts and delay from GTFS-RT |
 | **CenterCharts: Resource Efficiency** | `routes` + `vehicles` | Computed: active vehicles / capacity utilization per route |
-| **CenterCharts: On-Time Performance** | `gtfs_rt_trip_updates` (future) | Time-series of on-time percentage from arrival delays |
+| **CenterCharts: On-Time Performance** | `gtfs_rt_trip_updates` | Time-series of on-time percentage from arrival delays |
 | **PerformanceMetrics: Fleet Utilization** | `vehicle_telemetry` hypertable | `SELECT time_bucket('1 hour', time), avg(occupancy_percent) FROM vehicle_telemetry ...` |
 | **Historical count for stop** | `crowd_count` hypertable | `SELECT * FROM crowd_count WHERE stop_id = X AND time > NOW() - interval '24 hours'` |
 | **AlertBar** | `system_alerts` + `gtfs_rt_service_alerts` | Active system alerts (`WHERE resolved_at IS NULL`) merged with GTFS-RT service alerts |
@@ -610,12 +610,14 @@ Database connection settings read from environment variables with defaults match
 - `write_gtfs_trip_updates(rows)` -- bulk inserts parsed GTFS-RT trip update rows (including `direction_id`) into `gtfs_rt_trip_updates`
 - `purge_old_trip_updates(retain)` -- removes old fetches to cap storage
 
-**Placeholder stubs (for future modules):**
-- `write_gtfs_vehicle_position(...)`
+**Methods still pending implementation:**
+- `write_gtfs_vehicle_position(...)` -- currently not implemented
+
+**Active/implemented runtime methods beyond MQTT + trip updates:**
 - `upsert_vehicle(vehicle_id, route_id, capacity, current_stop_id, state, passenger_count, occupancy_percent)`
 - `write_vehicle_telemetry(vehicle_id, route_id, passenger_count, occupancy_percent, current_stop_id, state)`
-- `write_prediction(vehicle_id, route_id, stop_id, stop_sequence, predicted_passengers, ...)` -- will persist `VehiclePrediction` rows from PredictionEngine
-- `write_scheduler_decision(decision_type, route_id, trigger_vehicle_id, trigger_stop_id, ...)` -- will persist `Alert` objects from EvaluatorRegistry
+- `write_predictions(result)` -- persists `VehiclePrediction` rows from PredictionEngine
+- `write_scheduler_decision(...)` -- persists evaluator alerts/decisions
 - `resolve_alert(alert_id)` -- sets `resolved_at` on a system alert
 
 Each method is a self-contained transaction. Connection acquisition, parameterized queries, and error logging are handled internally.
@@ -637,6 +639,47 @@ Note: `pipeline_active` is updated when the backend **sends** start/stop command
 
 All DB calls are wrapped in try/except so a database failure never crashes the MQTT handler.
 
+## Table Usage And Realism Audit
+
+Usage status based on current code paths (`src/Backend/Database/writer.py`, `src/Backend/GTFS_RT/main.py`, `src/Backend/API/queries.py`, `src/Backend/PredictionEngine/`, `src/Backend/runtime_supervisor.py`):
+
+| Table | Status | Current Runtime Use |
+|------|--------|---------------------|
+| `routes` | Active | Seeded from GTFS and queried by API/GTFS filters/prediction context |
+| `route_stops` | Active | Seeded and used heavily for route-direction stop ordering, analytics, predictions |
+| `stop_times` | Partial | Seeded and used mainly for ETA/crowd-share logic in PredictionEngine |
+| `stops` | Active | Canonical stop/device registry; used by writer cache and dashboard/API joins |
+| `crowd_count` | Active | High-frequency ingest from MQTT crowd counts; historical chart queries |
+| `current_counts` | Active | Live upserted per device; primary source for real-time crowd panels/hotspots |
+| `stop_logs` | Active | Ingested from MQTT logs and read by device-log APIs |
+| `model_versions` | Active | Written on model ACK success; read by model-history API |
+| `admin_activity_log` | Active | Written on admin command send; read by admin-audit API |
+| `system_alerts` | Active | Created/resolved by runtime paths; read by alert endpoints |
+| `vehicles` | Active | Upserted by backend runtime and queried by fleet/route health views |
+| `vehicle_telemetry` | Active | Runtime snapshots used for utilization and history charts |
+| `gtfs_rt_vehicle_positions` | Placeholder | Table exists but writer method is not implemented |
+| `gtfs_rt_trip_updates` | Active | Poller writes updates; analytics/prediction paths read them |
+| `gtfs_rt_service_alerts` | Partial | Read path exists; production ingest path is not fully wired |
+| `predictions` | Active | PredictionEngine runtime persists rows for API/dashboard reads |
+| `scheduler_decisions` | Active | Evaluator/runtime persists decisions for scheduling audit/read APIs |
+
+### Real-World Connection Notes
+
+- The core real-world chain is: route definitions + ordered stops -> live stop counts -> trip updates -> per-stop predictions -> scheduler decisions.
+- `predictions.vehicle_id` currently stores GTFS `trip_id` (trip-instance identity), which is practical for feed reliability but semantically different from physical fleet IDs in `vehicles.vehicle_id`.
+- Some links are intentionally soft (application-level joins) to keep raw ingest flexible, but this allows potential orphans if IDs drift.
+
+### Optional Integrity Hardening (Low-Risk First)
+
+1. Add FK from `route_stops.stop_id` to `stops.stop_id` (high confidence static mapping).
+2. Add FK from `vehicles.current_stop_id` to `stops.stop_id` (improves fleet-state consistency).
+3. Add FK from `vehicle_telemetry.vehicle_id` to `vehicles.vehicle_id` (prevents orphan telemetry).
+4. Add FK on `predictions.route_id` -> `routes.route_id` and `predictions.stop_id` -> `stops.stop_id` (keeps prediction rows anchored to known entities).
+5. Add `CHECK` constraints for bounded enums:
+   - `vehicles.state`
+   - `system_alerts.severity`
+   - `scheduler_decisions.status`
+
 ## Files Summary
 
 | Action | File |
@@ -651,3 +694,201 @@ All DB calls are wrapped in try/except so a database failure never crashes the M
 | Modify | `src/Backend/MQTTBroker/broker_handler.py` |
 | Modify | `src/Backend/MQTTBroker/config.py` |
 | Modify | `src/Backend/MQTTBroker/requirements.txt` |
+
+## Entity Relationship Diagram (ERD)
+
+This ERD is split into two diagrams for readability:
+- **Core ERD** focuses on the operational data path used by live counting, route context, GTFS-RT ingestion, prediction, and scheduling.
+- **Supporting ERD** contains auxiliary/admin/audit tables that are useful but not central to the core runtime flow.
+
+### Core ERD (Operational Flow)
+
+```mermaid
+erDiagram
+    routes {
+        TEXT route_id PK
+        TEXT route_short_name
+        SMALLINT route_type
+        TEXT transport_type
+    }
+
+    route_stops {
+        TEXT route_id FK
+        TEXT stop_id
+        SMALLINT direction_id PK
+        INTEGER stop_sequence PK
+    }
+
+    stops {
+        TEXT device_id PK
+        TEXT stop_id UK
+        TEXT stop_name
+        TEXT transport_type
+        BOOLEAN is_online
+        BOOLEAN pipeline_active
+    }
+
+    current_counts {
+        TEXT device_id PK
+        TEXT stop_id
+        INTEGER count
+        INTEGER previous_count
+        TIMESTAMPTZ updated_at
+    }
+
+    crowd_count {
+        TIMESTAMPTZ time
+        TEXT device_id
+        TEXT stop_id
+        INTEGER count
+        TEXT zone
+    }
+
+    vehicles {
+        TEXT vehicle_id PK
+        TEXT route_id FK
+        TEXT current_stop_id
+        INTEGER passenger_count
+        REAL occupancy_percent
+        TIMESTAMPTZ last_updated
+    }
+
+    vehicle_telemetry {
+        TIMESTAMPTZ time
+        TEXT vehicle_id
+        TEXT route_id
+        INTEGER passenger_count
+        REAL occupancy_percent
+        TEXT current_stop_id
+    }
+
+    gtfs_rt_trip_updates {
+        TIMESTAMPTZ time
+        TEXT trip_id
+        TEXT route_id
+        SMALLINT direction_id
+        TEXT vehicle_id
+        TEXT stop_id
+        INTEGER stop_sequence
+    }
+
+    predictions {
+        TIMESTAMPTZ time
+        TEXT vehicle_id
+        TEXT route_id
+        SMALLINT direction_id
+        TEXT stop_id
+        INTEGER stop_sequence
+        INTEGER predicted_passengers
+        REAL predicted_occupancy_pct
+    }
+
+    scheduler_decisions {
+        BIGSERIAL id PK
+        TEXT decision_type
+        TEXT route_id
+        SMALLINT direction_id
+        TEXT vehicle_id
+        TEXT trigger_vehicle_id
+        TEXT trigger_stop_id
+        REAL predicted_occupancy_pct
+    }
+
+    routes ||--o{ route_stops : serves
+    stops ||--|| current_counts : latest_count
+    routes ||--o{ vehicles : assigned
+
+    stops ||--o{ crowd_count : history
+    stops ||--o{ route_stops : includes_stop
+    vehicles ||--o{ vehicle_telemetry : current_state_to_history
+    routes ||--o{ gtfs_rt_trip_updates : trip_feed
+    gtfs_rt_trip_updates ||--o{ predictions : drives
+    predictions ||--o{ scheduler_decisions : triggers
+```
+
+### Supporting ERD (Auxiliary/Audit)
+
+```mermaid
+erDiagram
+    stops {
+        TEXT device_id PK
+        TEXT stop_id UK
+        TEXT stop_name
+    }
+
+    routes {
+        TEXT route_id PK
+        TEXT route_short_name
+    }
+
+    model_versions {
+        SERIAL id PK
+        TEXT filename
+        TEXT sha256 UK
+        BOOLEAN is_active
+        TIMESTAMPTZ uploaded_at
+    }
+
+    admin_activity_log {
+        BIGSERIAL id PK
+        TIMESTAMPTZ occurred_at
+        TEXT target_device_id
+        TEXT action
+        TEXT initiated_by
+    }
+
+    system_alerts {
+        BIGSERIAL id PK
+        TIMESTAMPTZ created_at
+        TEXT severity
+        TEXT source
+        TEXT device_id
+        TEXT route_id
+    }
+
+    gtfs_rt_service_alerts {
+        BIGSERIAL id PK
+        TEXT alert_id
+        TIMESTAMPTZ received_at
+        TEXT cause
+        TEXT effect
+        TEXT severity
+    }
+
+    gtfs_rt_vehicle_positions {
+        TIMESTAMPTZ time
+        TEXT vehicle_id
+        TEXT route_id
+        TEXT trip_id
+        TEXT stop_id
+        REAL speed
+    }
+
+    stop_logs {
+        TIMESTAMPTZ time
+        TEXT device_id
+        TEXT level
+        TEXT message
+    }
+
+    stop_times {
+        TEXT trip_id PK
+        INTEGER stop_sequence PK
+        TEXT stop_id
+        INTEGER arrival_seconds
+        INTEGER departure_seconds
+    }
+
+    stops ||--o{ stop_logs : logs_from
+    stops ||--o{ admin_activity_log : targets
+    stops ||--o{ system_alerts : related_device
+    routes ||--o{ system_alerts : related_route
+    routes ||--o{ gtfs_rt_vehicle_positions : position_feed
+```
+
+Legend:
+- A small subset of links are enforced foreign keys in `init.sql` (`routes -> route_stops`, `stops -> current_counts`, `routes -> vehicles`).
+- The remaining links show stable operational/analytical relationships used by ingestion and query paths.
+
+Time-series note:
+- `crowd_count`, `stop_logs`, `vehicle_telemetry`, `gtfs_rt_trip_updates`, `gtfs_rt_vehicle_positions`, and `predictions` are TimescaleDB hypertables.

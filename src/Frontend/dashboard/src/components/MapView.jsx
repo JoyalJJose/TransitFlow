@@ -9,7 +9,10 @@ import Map, {
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
-const DUBLIN_CENTER = { lat: 53.345, lng: -6.26 };
+const DUBLIN_CENTER = { lat: 53.3447, lng: -6.291 };
+const DEFAULT_ZOOM = 14;
+
+let _savedViewState = null;
 
 export const ROUTE_COLORS = {
   '5552_130286': '#7c3aed',
@@ -179,12 +182,9 @@ export default function MapView({
     return m;
   }, [activeRoutes]);
 
-  const center = useMemo(() => {
-    if (!stops.length) return DUBLIN_CENTER;
-    const avgLat = stops.reduce((s, st) => s + st.lat, 0) / stops.length;
-    const avgLng = stops.reduce((s, st) => s + st.lng, 0) / stops.length;
-    return { lat: avgLat, lng: avgLng };
-  }, [stops]);
+  const handleMove = useCallback((evt) => {
+    _savedViewState = evt.viewState;
+  }, []);
 
   /* ---- Route geometry fetching ---- */
   const [routeGeometries, setRouteGeometries] = useState({});
@@ -436,11 +436,12 @@ export default function MapView({
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <Map
-        initialViewState={{
-          latitude: center.lat,
-          longitude: center.lng,
-          zoom: 12,
+        initialViewState={_savedViewState ?? {
+          latitude: DUBLIN_CENTER.lat,
+          longitude: DUBLIN_CENTER.lng,
+          zoom: DEFAULT_ZOOM,
         }}
+        onMove={handleMove}
         style={{ width: '100%', height: '100%' }}
         mapStyle={dark ? 'mapbox://styles/mapbox/dark-v11' : 'mapbox://styles/mapbox/light-v11'}
         mapboxAccessToken={MAPBOX_TOKEN}

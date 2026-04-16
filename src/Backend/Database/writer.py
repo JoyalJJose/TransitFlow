@@ -287,7 +287,7 @@ class DatabaseWriter:
                     if inserted:
                         cur.execute("NOTIFY dashboard_update, 'gtfs_trip_updates'")
                 conn.commit()
-            logger.info("Inserted %d / %d trip update rows", inserted, len(updates))
+            logger.debug("Inserted %d / %d trip update rows", inserted, len(updates))
         except Exception:
             logger.exception("Failed to write GTFS-RT trip updates batch")
 
@@ -319,7 +319,7 @@ class DatabaseWriter:
                     deleted = cur.rowcount
                 conn.commit()
             if deleted:
-                logger.info(
+                logger.debug(
                     "Purged %d old trip-update rows (retaining last %d fetches)",
                     deleted, retain,
                 )
@@ -449,7 +449,7 @@ class DatabaseWriter:
                     if rows_inserted:
                         cur.execute("NOTIFY dashboard_update, 'predictions'")
                 conn.commit()
-            logger.info(
+            logger.debug(
                 "Wrote %d prediction rows for route=%s dir=%s",
                 rows_inserted,
                 result.route_id,
@@ -496,7 +496,7 @@ class DatabaseWriter:
                     )
                     cur.execute("NOTIFY dashboard_update, 'scheduler_decision'")
                 conn.commit()
-            logger.info(
+            logger.debug(
                 "Wrote scheduler decision (%s) for route=%s dir=%s",
                 decision_type,
                 alert.route_id,

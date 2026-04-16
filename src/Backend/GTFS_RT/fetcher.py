@@ -73,7 +73,7 @@ class GTFSRealtimeFetcher:
             logger.exception("Failed to parse GTFS-R protobuf response")
             return None
 
-        logger.info(
+        logger.debug(
             "Fetched GTFS-R feed: %d entities (timestamp %s)",
             len(feed.entity),
             _dt.datetime.fromtimestamp(
@@ -147,7 +147,7 @@ class GTFSRealtimeFetcher:
                     }
                 )
 
-        logger.info(
+        logger.debug(
             "Parsed %d rows from %d TripUpdates (%d skipped by route filter)",
             len(rows),
             total_trip_updates,

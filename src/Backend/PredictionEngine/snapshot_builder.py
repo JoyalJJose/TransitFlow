@@ -115,7 +115,7 @@ class SnapshotBuilder:
             with conn.cursor() as cur:
                 stops = self._query_stops(cur, route_id, direction_id)
                 if not stops:
-                    logger.warning(
+                    logger.debug(
                         "No route_stops found for route=%s dir=%s",
                         route_id,
                         direction_id,

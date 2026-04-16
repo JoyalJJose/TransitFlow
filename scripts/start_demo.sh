@@ -91,16 +91,16 @@ ok "TLS certificates present"
 log "Starting Docker containers…"
 docker compose -f "$ROOT/docker/docker-compose.yml" up -d 2>&1 | sed 's/^/  /'
 
-wait_for_port 127.0.0.1 5432 "TimescaleDB" 30
 wait_for_port 127.0.0.1 8883 "Mosquitto"   15
 
 log "Waiting for TimescaleDB to be healthy…"
-for i in $(seq 1 30); do
-    if docker exec transitflow-db pg_isready -U transitflow -d transitflow >/dev/null 2>&1; then
+for i in $(seq 1 60); do
+    health=$(docker inspect --format='{{.State.Health.Status}}' transitflow-db 2>/dev/null)
+    if [ "$health" = "healthy" ]; then
         ok "TimescaleDB healthy"
         break
     fi
-    if [ "$i" -eq 30 ]; then fail "TimescaleDB not healthy after 30s"; fi
+    if [ "$i" -eq 60 ]; then fail "TimescaleDB not healthy after 60s"; fi
     sleep 1
 done
 
@@ -113,8 +113,28 @@ if [ "${row_count:-0}" -gt 0 ]; then
     ok "Database already seeded ($row_count stops) – skipping"
 else
     log "Seeding database (this may take ~60s on first run)…"
-    (cd "$ROOT/src" && python -m Backend.Database.seed 2>&1 | sed 's/^/  /')
-    ok "Database seeded"
+    if (cd "$ROOT/src" && python -m Backend.Database.seed 2>&1 | sed 's/^/  /'); then
+        ok "Database seeded"
+    else
+        fail "Database seeding FAILED (see output above)"
+    fi
+fi
+
+# ── 2b. Seed demo data (vehicles, telemetry, alerts) ─────────────
+vehicle_count=$(docker exec transitflow-db psql -U transitflow -d transitflow -tAc \
+    "SELECT count(*) FROM vehicles;" 2>/dev/null || echo "0")
+
+if [ "${vehicle_count:-0}" -gt 0 ]; then
+    ok "Demo data already seeded ($vehicle_count vehicles) – skipping"
+else
+    log "Seeding demo data (vehicles, telemetry, alerts)…"
+    if (cd "$ROOT/src" && python -m Backend.Database.seed_test_data 2>&1 | sed 's/^/  /'); then
+        ok "Demo data seeded"
+        docker exec transitflow-db psql -U transitflow -d transitflow \
+            -c "NOTIFY dashboard_update, 'seed_complete'" >/dev/null 2>&1 || true
+    else
+        warn "Demo data seeding failed (non-critical)"
+    fi
 fi
 
 # ── 3. Kill any leftover demo processes ───────────────────────────
