@@ -61,6 +61,8 @@ PRED_DEFAULT_CAPACITY = int(os.environ.get("PREDICTION_DEFAULT_CAPACITY", "80"))
 PRED_OCCUPANCY_THRESHOLD = float(os.environ.get("PREDICTION_OCCUPANCY_THRESHOLD", "0.9"))
 PRED_MIN_STRANDED = int(os.environ.get("PREDICTION_MIN_STRANDED", "5"))
 PRED_MIN_CONFIDENCE = float(os.environ.get("PREDICTION_MIN_CONFIDENCE", "0.3"))
+API_HOST = os.environ.get("API_HOST", "127.0.0.1")
+API_PORT = os.environ.get("API_PORT", "8000")
 
 _TRIGGER_PAYLOADS = frozenset({"crowd_count", "gtfs_trip_updates"})
 
@@ -285,9 +287,12 @@ def main():
         _Worker(
             "api",
             [python, "-m", "uvicorn", "Backend.API.main:app",
-             "--host", "127.0.0.1", "--port", "8000"],
+             "--host", API_HOST, "--port", API_PORT],
             "api_server.log",
-            env_extra={"PYTHONPATH": "src"},
+            env_extra={
+                "PYTHONPATH": "src",
+                "GTFS_RT_STATUS": "enabled" if os.environ.get("GTFSR_API_KEY", "") else "disabled",
+            },
         ),
     ]
 

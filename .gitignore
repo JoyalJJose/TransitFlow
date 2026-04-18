@@ -33,8 +33,16 @@ ENV/
 *.pth
 *.onnx
 
-# Datasets (large -- 1GB+)
-data/
+# Datasets (large -- 1GB+). Keep only the demo GTFS static feeds so the Docker
+# demo can seed the database on a fresh clone; exclude the two Dublin Bus files
+# that are too large for a lean repo.
+/data/*
+!/data/Transport Data/
+/data/Transport Data/Dublin Bus/shapes.txt
+/data/Transport Data/Dublin Bus/stop_times.txt
+
+# Nested data/ directories (e.g. frontend mock data scaffolding)
+src/Frontend/dashboard/src/data/
 
 # TLS certs (generated per-environment)
 docker/mosquitto/certs/*.crt

@@ -1,0 +1,188 @@
+# Self-contained demo stack. Run from the repo root:
+#
+#   docker compose -f docker/docker-compose.demo.yml up -d --build --wait
+#   docker compose -f docker/docker-compose.demo.yml down        # stop, keep data
+#   docker compose -f docker/docker-compose.demo.yml down -v     # stop + wipe demo volumes
+#
+# Full uninstall (only this project's resources + only these 3 image tags):
+#   docker compose -f docker/docker-compose.demo.yml down -v
+#   docker rmi transitflow-demo/app:latest transitflow-demo/mosquitto:latest transitflow-demo/dashboard:latest
+#
+# Nothing outside the "transitflow-demo" Compose project or those three image tags is ever touched.
+
+name: transitflow-demo
+
+services:
+  mosquitto:
+    build:
+      context: ..
+      dockerfile: docker/mosquitto/Dockerfile
+    image: transitflow-demo/mosquitto:latest
+    container_name: transitflow-demo-mosquitto
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/acl:/mosquitto/config/acl:ro
+      - mosquitto-certs:/mosquitto/certs
+    tmpfs:
+      - /mosquitto/data
+      - /mosquitto/log
+    healthcheck:
+      test: ["CMD-SHELL", "pidof mosquitto >/dev/null && test -f /mosquitto/certs/server.crt"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: transitflow-demo-db
+    environment:
+      POSTGRES_DB: transitflow
+      POSTGRES_USER: transitflow
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-transitflow_dev}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U transitflow -d transitflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  seeder:
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    image: transitflow-demo/app:latest
+    container_name: transitflow-demo-seeder
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      DB_HOST: timescaledb
+      DB_PORT: 5432
+      DB_NAME: transitflow
+      DB_USER: transitflow
+      DB_PASSWORD: ${DB_PASSWORD:-transitflow_dev}
+      PYTHONPATH: /app/src
+    command: >
+      sh -c "python -m Backend.Database.seed
+      && python -m Backend.Database.seed_test_data"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: "no"
+
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    image: transitflow-demo/app:latest
+    container_name: transitflow-demo-backend
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+      seeder:
+        condition: service_completed_successfully
+    environment:
+      DB_HOST: timescaledb
+      DB_PORT: 5432
+      DB_NAME: transitflow
+      DB_USER: transitflow
+      DB_PASSWORD: ${DB_PASSWORD:-transitflow_dev}
+      MQTT_BROKER_HOST: mosquitto
+      MQTT_BROKER_PORT: 8883
+      MQTT_CA_CERT: /mosquitto/certs/ca.crt
+      MQTT_CLIENT_CERT: /mosquitto/certs/client.crt
+      MQTT_CLIENT_KEY: /mosquitto/certs/client.key
+      GTFSR_API_KEY: ${GTFSR_API_KEY:-}
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      PYTHONPATH: /app/src
+      RECEIVED_IMAGES_DIR: /app/received/images
+      RECEIVED_DATA_DIR: /app/received/data
+    command: ["python", "-m", "Backend.runtime_supervisor"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+      - /app/logs:mode=1777
+      - /app/received:mode=1777
+    volumes:
+      - mosquitto-certs:/mosquitto/certs:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  simulator:
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    image: transitflow-demo/app:latest
+    container_name: transitflow-demo-simulator
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      MQTT_BROKER_HOST: mosquitto
+      MQTT_BROKER_PORT: 8883
+      MQTT_CA_CERT: /mosquitto/certs/ca.crt
+      MQTT_CLIENT_CERT: /mosquitto/certs/client.crt
+      MQTT_CLIENT_KEY: /mosquitto/certs/client.key
+      SIM_TIME_SCALE: ${SIM_TIME_SCALE:-1}
+      SIM_RANDOM_SEED: ${SIM_RANDOM_SEED:-}
+      PYTHONPATH: /app/src
+    command: ["python", "-m", "Simulator.main"]
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - mosquitto-certs:/mosquitto/certs:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: docker/dashboard.Dockerfile
+    image: transitflow-demo/dashboard:latest
+    container_name: transitflow-demo-dashboard
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:5173:80"
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  mosquitto-certs:
