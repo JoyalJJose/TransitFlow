@@ -17,10 +17,16 @@ and deletes stale seeded rows for append-only tables.
 Usage:
     source .venv/Scripts/activate
     PYTHONPATH=src python -m Backend.Database.seed_test_data
+
+    # Re-anchor the 24h vehicle_telemetry window to "now" without
+    # re-seeding anything else (used by scripts/start_demo.sh so the
+    # Fleet Utilisation / Fullness / Occupancy charts always have data).
+    PYTHONPATH=src python -m Backend.Database.seed_test_data --refresh-telemetry
 """
 
 from __future__ import annotations
 
+import argparse
 import datetime as _dt
 import hashlib
 import json
@@ -590,7 +596,56 @@ def seed_trip_updates(conn):
 # Main
 # -----------------------------------------------------------------------
 
+def _load_vehicle_rows(conn) -> list[tuple]:
+    """Fetch existing vehicles shaped like the tuples seed_vehicles() returns.
+
+    ``seed_vehicle_telemetry`` only uses positions 0-3 (vehicle_id, route_id,
+    capacity, current_stop_id), so the trailing fields are padded with
+    placeholders.
+    """
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT vehicle_id, route_id, capacity, current_stop_id
+            FROM vehicles
+            WHERE is_active = true AND current_stop_id IS NOT NULL
+        """)
+        return [
+            (row[0], row[1], row[2], row[3], None, 0, 0.0, True, None)
+            for row in cur.fetchall()
+        ]
+
+
+def refresh_telemetry(conn) -> None:
+    """Re-anchor the 24h vehicle_telemetry window to "now".
+
+    The three charts (Home: Fleet Utilisation, Analytics: Vehicle Fullness
+    Over Time and Fleet Occupancy Distribution) all query
+    ``vehicle_telemetry WHERE time > NOW() - INTERVAL '24 hours'``.  The
+    full seed is gated on whether ``vehicles`` already has rows, so on
+    demo restarts the telemetry ages out and the charts go blank.  This
+    repopulates only the time-windowed telemetry, without touching the
+    reference ``vehicles`` rows.
+    """
+    vehicle_rows = _load_vehicle_rows(conn)
+    if not vehicle_rows:
+        logger.warning("No active vehicles found; skipping telemetry refresh")
+        return
+    seed_vehicle_telemetry(conn, vehicle_rows)
+
+
 def main():
+    parser = argparse.ArgumentParser(description="Seed TransitFlow test data")
+    parser.add_argument(
+        "--refresh-telemetry",
+        action="store_true",
+        help=(
+            "Only re-seed the 24h vehicle_telemetry window (leaves every "
+            "other seeded table untouched). Used on demo restarts to keep "
+            "the fleet occupancy charts populated."
+        ),
+    )
+    args = parser.parse_args()
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s  %(levelname)-8s  %(message)s",
@@ -599,6 +654,12 @@ def main():
     logger.info("Connecting to database...")
     conn = _get_connection()
     try:
+        if args.refresh_telemetry:
+            logger.info("--- Refreshing vehicle telemetry window ---")
+            refresh_telemetry(conn)
+            logger.info("=== Telemetry refresh complete ===")
+            return
+
         logger.info("--- Seeding vehicles ---")
         vehicle_rows = seed_vehicles(conn)
 

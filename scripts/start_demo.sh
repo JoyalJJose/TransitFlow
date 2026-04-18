@@ -144,6 +144,18 @@ else
     fi
 fi
 
+# ── 2c. Refresh vehicle_telemetry window (always) ─────────────────
+# The full seed above is skipped on restarts, but the fleet occupancy
+# charts all query `vehicle_telemetry WHERE time > NOW() - INTERVAL
+# '24 hours'`. Re-anchor that window on every start so those charts
+# keep showing data.
+log "Refreshing fleet telemetry window…"
+if (cd "$ROOT/src" && python -m Backend.Database.seed_test_data --refresh-telemetry 2>&1 | sed 's/^/  /'); then
+    ok "Fleet telemetry refreshed (24h window re-anchored to now)"
+else
+    warn "Telemetry refresh failed (fleet charts may be empty)"
+fi
+
 # ── 3. Kill any leftover demo processes ───────────────────────────
 log "Cleaning up leftover processes…"
 for port in 8000 5173 5174; do

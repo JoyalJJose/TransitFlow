@@ -21,8 +21,12 @@ function formatUptime(totalSeconds) {
 }
 
 function dotClass(status) {
-  if (status === true || status === 'ok') return 'system-stats-dot system-stats-dot-ok';
-  if (status === 'unknown' || status == null) return 'system-stats-dot';
+  if (status === true || status === 'ok' || status === 'enabled') {
+    return 'system-stats-dot system-stats-dot-ok';
+  }
+  if (status === 'unknown' || status === 'disabled' || status == null) {
+    return 'system-stats-dot';
+  }
   return 'system-stats-dot system-stats-dot-down';
 }
 
