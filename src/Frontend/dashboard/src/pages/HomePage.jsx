@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import StationPanel from '../components/StationPanel';
 import MapView from '../components/MapView';
 import CenterCharts from '../components/CenterCharts';
@@ -10,6 +10,9 @@ import SystemStats from '../components/SystemStats';
 
 export default function HomePage({ data, theme }) {
   const [mapFullscreen, setMapFullscreen] = useState(false);
+
+  const enterFullscreen = useCallback(() => setMapFullscreen(true), []);
+  const exitFullscreen = useCallback(() => setMapFullscreen(false), []);
 
   return (
     <>
@@ -23,14 +26,16 @@ export default function HomePage({ data, theme }) {
 
         <div className="center-column">
           <div className="map-section">
-            <MapView
-              stops={data.stops}
-              stopWaitCounts={data.stopWaitCounts}
-              vehicles={data.vehicles}
-              routes={data.routes}
-              theme={theme}
-              onToggleFullscreen={() => setMapFullscreen(true)}
-            />
+            {!mapFullscreen && (
+              <MapView
+                stops={data.stops}
+                stopWaitCounts={data.stopWaitCounts}
+                vehicles={data.vehicles}
+                routes={data.routes}
+                theme={theme}
+                onToggleFullscreen={enterFullscreen}
+              />
+            )}
           </div>
           <CenterCharts
             resourceEfficiency={data.resourceEfficiency}
@@ -45,17 +50,19 @@ export default function HomePage({ data, theme }) {
         </div>
       </main>
 
-      <div className={`map-fullscreen-overlay${mapFullscreen ? ' map-fullscreen-overlay--active' : ''}`}>
-        <MapView
-          stops={data.stops}
-          stopWaitCounts={data.stopWaitCounts}
-          vehicles={data.vehicles}
-          routes={data.routes}
-          theme={theme}
-          isFullscreen={mapFullscreen}
-          onToggleFullscreen={() => setMapFullscreen(false)}
-        />
-      </div>
+      {mapFullscreen && (
+        <div className="map-fullscreen-overlay map-fullscreen-overlay--active">
+          <MapView
+            stops={data.stops}
+            stopWaitCounts={data.stopWaitCounts}
+            vehicles={data.vehicles}
+            routes={data.routes}
+            theme={theme}
+            isFullscreen
+            onToggleFullscreen={exitFullscreen}
+          />
+        </div>
+      )}
     </>
   );
 }

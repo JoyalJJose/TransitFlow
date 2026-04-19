@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import {
   BarChart,
   Bar,
@@ -35,13 +36,19 @@ export default function CenterCharts({
 }) {
   const dark = theme === 'dark';
   const grid = dark ? 'rgba(144,99,255,0.12)' : 'rgba(57,32,97,0.08)';
-  const tick = { fill: dark ? 'rgba(229,205,200,0.65)' : 'rgba(57,32,97,0.45)', fontSize: 9 };
-  const tooltipStyle = {
-    background: dark ? '#2a2b44' : '#fff',
-    border: `1px solid ${dark ? 'rgba(144,99,255,0.2)' : 'rgba(57,32,97,0.12)'}`,
-    borderRadius: 6,
-    fontSize: 12,
-  };
+  const tick = useMemo(
+    () => ({ fill: dark ? 'rgba(229,205,200,0.85)' : 'rgba(57,32,97,0.7)', fontSize: 11 }),
+    [dark],
+  );
+  const tooltipStyle = useMemo(
+    () => ({
+      background: dark ? '#2a2b44' : '#fff',
+      border: `1px solid ${dark ? 'rgba(144,99,255,0.2)' : 'rgba(57,32,97,0.12)'}`,
+      borderRadius: 6,
+      fontSize: 12,
+    }),
+    [dark],
+  );
 
   return (
     <div className="center-charts">

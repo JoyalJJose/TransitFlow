@@ -158,7 +158,7 @@ fi
 
 # ── 3. Kill any leftover demo processes ───────────────────────────
 log "Cleaning up leftover processes…"
-for port in 8000 5173 5174; do
+for port in 8000 8100 5173 5174; do
     existing_pid=$(netstat -aon 2>/dev/null | grep ":${port}.*LISTENING" | awk '{print $5}' | head -1)
     if [ -n "$existing_pid" ] && [ "$existing_pid" != "0" ]; then
         taskkill //PID "$existing_pid" //F >/dev/null 2>&1 || true
@@ -168,7 +168,7 @@ done
 
 # Kill leftover Python processes for our modules (prevents MQTT client_id collision)
 killed=$(powershell -Command "
-    \$pattern = 'Simulator\.main|Backend\.MQTTBroker\.main|Backend\.API\.main|Backend\.GTFS_RT|Backend\.runtime_supervisor|uvicorn Backend\.API'
+    \$pattern = 'Simulator\.main|Backend\.MQTTBroker\.main|Backend\.API\.main|Backend\.GTFS_RT|Backend\.runtime_supervisor|uvicorn Backend\.API|External API'
     Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" 2>\$null |
         Where-Object { \$_.CommandLine -match \$pattern } |
         ForEach-Object {
@@ -223,6 +223,17 @@ if grep -q "Cycle complete\|Prediction loop started" "$LOGDIR/runtime_supervisor
 else
     warn "Prediction loop may still be starting (check logs/runtime_supervisor.log)"
 fi
+
+# ── 4b. External API (public traffic-light endpoints) ────────────
+log "Starting External API on :8100…"
+(cd "$ROOT" && \
+    PYTHONPATH=src python -m uvicorn main:app \
+        --app-dir "src/External API" \
+        --host 127.0.0.1 --port 8100 \
+) >"$LOGDIR/external_api.log" 2>&1 &
+PIDS+=($!)
+
+wait_for_port 127.0.0.1 8100 "External API" 15
 
 # ── 5. Frontend dashboard ─────────────────────────────────────────
 log "Starting React dashboard…"
@@ -316,7 +327,7 @@ fi
 # ── 8. Firewall safety audit ─────────────────────────────────────
 log "Firewall safety check…"
 unsafe=0
-for port in 5432 8883 8000; do
+for port in 5432 8883 8000 8100; do
     binding=$(netstat -an 2>/dev/null | grep ":${port}.*LISTENING" | head -1)
     if echo "$binding" | grep -q "0\.0\.0\.0:${port}"; then
         warn "Port $port bound to 0.0.0.0 (exposed to network)"
@@ -340,6 +351,7 @@ echo -e "${GREEN}═════════════════════
 echo ""
 echo -e "  Dashboard:   ${CYAN}http://localhost:${DASHBOARD_PORT}/${NC}"
 echo -e "  API:         ${CYAN}http://127.0.0.1:8000${NC}"
+echo -e "  External API:${CYAN}http://127.0.0.1:8100${NC} (public traffic-light data)"
 echo -e "  MQTT:        ${CYAN}127.0.0.1:8883${NC} (TLS)"
 echo -e "  Database:    ${CYAN}127.0.0.1:5432${NC}"
 echo -e "  Time scale:  ${CYAN}${SIM_TIME_SCALE:-1}x${NC}"

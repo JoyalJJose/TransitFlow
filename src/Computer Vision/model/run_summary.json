@@ -1,0 +1,95 @@
+{
+  "dataset_yaml": "data/thermalImageDataset/data.yaml",
+  "run_name": "v8s_fullres",
+  "hyperparameters": {
+    "data": "models\\v8s_fullres\\data.resolved.yaml",
+    "epochs": 500,
+    "patience": 50,
+    "imgsz": 640,
+    "batch": 24,
+    "workers": 8,
+    "name": "v8s_fullres",
+    "project": "models",
+    "device": "cuda",
+    "seed": 0,
+    "cos_lr": true,
+    "amp": true,
+    "deterministic": true,
+    "save": true,
+    "plots": true,
+    "val": true,
+    "save_period": -1,
+    "exist_ok": true
+  },
+  "training_process": {
+    "status": "completed",
+    "interrupted": false,
+    "duration_seconds": 28309.4729186,
+    "duration_human": "7h 51m 49s",
+    "epoch_cap": 500,
+    "epochs_run": 235,
+    "early_stopped": true,
+    "best_epoch": {
+      "epoch": 185,
+      "box_loss": 1.0624,
+      "cls_loss": 0.53776,
+      "dfl_loss": 0.91306,
+      "precision": 0.88312,
+      "recall": 0.85995,
+      "mAP50": 0.92668,
+      "mAP50_95": 0.59525
+    },
+    "final_epoch": {
+      "epoch": 235,
+      "box_loss": 0.99813,
+      "cls_loss": 0.50523,
+      "dfl_loss": 0.89917,
+      "precision": 0.87679,
+      "recall": 0.86688,
+      "mAP50": 0.92609,
+      "mAP50_95": 0.5938
+    }
+  },
+  "final_model": {
+    "best_pt_path": "C:\\Users\\Joyal\\Desktop\\randomTest\\lastTraining\\models\\v8s_fullres\\weights\\best.pt",
+    "last_pt_path": "C:\\Users\\Joyal\\Desktop\\randomTest\\lastTraining\\models\\v8s_fullres\\weights\\last.pt",
+    "best_pt_mib": 21.48832130432129,
+    "last_pt_mib": 21.48832130432129,
+    "architecture": {
+      "layers": 72,
+      "parameters": 11125971,
+      "gradients": 0,
+      "gflops": 28.4376576
+    },
+    "val_metrics": {
+      "precision": 0.8825589178406398,
+      "recall": 0.8596432001604355,
+      "mAP50": 0.9265602418777148,
+      "mAP50_95": 0.5943557027756352,
+      "per_class_mAP50_95": {
+        "person": 0.5943557027756352
+      }
+    },
+    "test_metrics": {
+      "precision": 0.9046789305821754,
+      "recall": 0.8755746245786087,
+      "mAP50": 0.9427462923276958,
+      "mAP50_95": 0.6102058960974353,
+      "per_class_mAP50_95": {
+        "person": 0.6102058960974353
+      }
+    },
+    "class_names": [
+      "person"
+    ]
+  },
+  "artifacts": {
+    "best_pt": "C:\\Users\\Joyal\\Desktop\\randomTest\\lastTraining\\models\\v8s_fullres\\weights\\best.pt",
+    "last_pt": "C:\\Users\\Joyal\\Desktop\\randomTest\\lastTraining\\models\\v8s_fullres\\weights\\last.pt",
+    "results_csv": "models\\v8s_fullres\\results.csv",
+    "results_png": "models\\v8s_fullres\\results.png",
+    "confusion_matrix": "models\\v8s_fullres\\confusion_matrix.png",
+    "pr_curve": "models\\v8s_fullres\\PR_curve.png",
+    "f1_curve": "models\\v8s_fullres\\F1_curve.png"
+  }
+}

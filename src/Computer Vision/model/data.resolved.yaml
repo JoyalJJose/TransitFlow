@@ -1,0 +1,7 @@
+path: C:\Users\Joyal\Desktop\randomTest\lastTraining\data\thermalImageDataset
+train: C:\Users\Joyal\Desktop\randomTest\lastTraining\data\thermalImageDataset\train\images
+val: C:\Users\Joyal\Desktop\randomTest\lastTraining\data\thermalImageDataset\valid\images
+test: C:\Users\Joyal\Desktop\randomTest\lastTraining\data\thermalImageDataset\test\images
+nc: 1
+names:
+- person

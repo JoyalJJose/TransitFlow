@@ -70,6 +70,7 @@ backups/
 
 # Local temp and coverage artifacts
 coverage/
+htmlcov/
 .coverage*
 *.tmp
 *.bak

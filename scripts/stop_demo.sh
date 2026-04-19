@@ -33,7 +33,7 @@ done
 # ── 1. Kill processes on known ports ─────────────────────────────
 log "Stopping application services…"
 
-for port in 8000 5173 5174; do
+for port in 8000 8100 5173 5174; do
     pid=$(netstat -aon 2>/dev/null | grep ":${port}.*LISTENING" | awk '{print $5}' | head -1)
     if [ -n "$pid" ] && [ "$pid" != "0" ]; then
         taskkill //PID "$pid" //F >/dev/null 2>&1 || true
@@ -43,7 +43,7 @@ done
 
 # ── 2. Kill Python processes for our modules (PowerShell – reliable on Windows)
 killed=$(powershell -Command "
-    \$pattern = 'Simulator\.main|Backend\.MQTTBroker\.main|Backend\.API\.main|Backend\.GTFS_RT|Backend\.runtime_supervisor|uvicorn Backend\.API'
+    \$pattern = 'Simulator\.main|Backend\.MQTTBroker\.main|Backend\.API\.main|Backend\.GTFS_RT|Backend\.runtime_supervisor|uvicorn Backend\.API|External API'
     Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" 2>\$null |
         Where-Object { \$_.CommandLine -match \$pattern } |
         ForEach-Object {
@@ -74,7 +74,7 @@ fi
 # ── 4. Verify nothing is listening ────────────────────────────────
 echo ""
 remaining=0
-for port in 8883 5432 8000 5173 5174; do
+for port in 8883 5432 8000 8100 5173 5174; do
     if python -c "import socket; s=socket.create_connection(('127.0.0.1',$port),timeout=0.5); s.close()" 2>/dev/null; then
         if [ "$KEEP_DOCKER" = true ] && ([ "$port" = "8883" ] || [ "$port" = "5432" ]); then
             continue

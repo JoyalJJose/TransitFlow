@@ -11,15 +11,16 @@ import {
 } from 'recharts';
 
 function occColor(pct) {
-  if (pct >= 80) return '#ef4444';
-  if (pct >= 50) return '#f59e0b';
+  if (pct >= 90) return '#ef4444';
+  if (pct >= 70) return '#f97316';
+  if (pct >= 40) return '#eab308';
   return '#22c55e';
 }
 
 function waitColor(count) {
-  if (count >= 20) return '#ef4444';
-  if (count >= 10) return '#f59e0b';
-  return '#3b82f6';
+  if (count >= 15) return '#ef4444';
+  if (count >= 6) return '#eab308';
+  return '#22c55e';
 }
 
 export default function DashboardCharts({
@@ -60,10 +61,10 @@ export default function DashboardCharts({
               angle={-35}
               textAnchor="end"
               interval={0}
-              tick={{ fill: '#aaa', fontSize: 11 }}
+              tick={{ fill: '#aaa', fontSize: 12 }}
               height={70}
             />
-            <YAxis tick={{ fill: '#aaa', fontSize: 11 }} />
+            <YAxis tick={{ fill: '#aaa', fontSize: 12 }} />
             <Tooltip
               contentStyle={{ background: '#1e1e2e', border: 'none', borderRadius: 8 }}
               labelStyle={{ color: '#ccc' }}
@@ -87,12 +88,12 @@ export default function DashboardCharts({
               angle={-35}
               textAnchor="end"
               interval={0}
-              tick={{ fill: '#aaa', fontSize: 11 }}
+              tick={{ fill: '#aaa', fontSize: 12 }}
               height={70}
             />
             <YAxis
               domain={[0, 100]}
-              tick={{ fill: '#aaa', fontSize: 11 }}
+              tick={{ fill: '#aaa', fontSize: 12 }}
               tickFormatter={(v) => `${v}%`}
             />
             <Tooltip

@@ -1,0 +1,32 @@
+══════════════════════════════════ TRAINING PROCESS ══════════════════════════════════
+  dataset         : data/thermalImageDataset/data.yaml
+  name            : v8s_fullres
+  hyperparameters : model=models/best.pt epochs=500 patience=50 batch=24 imgsz=640 workers=8 device=cuda seed=0 cos_lr=True amp=True deterministic=True
+  status          : completed
+  duration        : 7h 51m 49s
+  epochs run      : 235 / 500   (early stopped: yes, patience=50)
+  best epoch      : 185
+                    box/cls/dfl = 1.062 / 0.538 / 0.913
+                    P=0.883  R=0.860  mAP50=0.927  mAP50-95=0.595
+  final epoch     : 235
+                    box/cls/dfl = 0.998 / 0.505 / 0.899
+                    P=0.877  R=0.867  mAP50=0.926  mAP50-95=0.594
+
+════════════════════════════════════ FINAL MODEL ═════════════════════════════════════
+  best.pt         : models\v8s_fullres\weights\best.pt   (21.5 MiB)
+  last.pt         : models\v8s_fullres\weights\last.pt   (21.5 MiB)
+  architecture    : 72 layers, 11,125,971 params, 28.4 GFLOPs
+
+  val  (best.pt)  : P=0.883  R=0.860  mAP50=0.927  mAP50-95=0.594
+                    per-class:  person mAP50-95=0.594
+  test (best.pt)  : P=0.905  R=0.876  mAP50=0.943  mAP50-95=0.610
+                    per-class:  person mAP50-95=0.610
+
+  artifacts:
+    best.pt                models\v8s_fullres\weights\best.pt
+    last.pt                models\v8s_fullres\weights\last.pt
+    results.csv            models\v8s_fullres\results.csv
+    results.png            models\v8s_fullres\results.png
+    confusion_matrix.png   models\v8s_fullres\confusion_matrix.png
+    PR_curve.png           models\v8s_fullres\PR_curve.png
+    F1_curve.png           models\v8s_fullres\F1_curve.png

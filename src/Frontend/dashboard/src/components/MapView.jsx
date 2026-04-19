@@ -99,6 +99,84 @@ function TypeBadge({ type }) {
   return <span className={`map-popup-badge map-popup-badge--${type}`}>{label}</span>;
 }
 
+function MapLegend() {
+  const [collapsed, setCollapsed] = useState(false);
+
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        className="map-legend-toggle"
+        onClick={() => setCollapsed(false)}
+        title="Show legend"
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <circle cx="4" cy="4" r="2" fill="#22c55e" />
+          <circle cx="12" cy="4" r="2" fill="#eab308" />
+          <circle cx="4" cy="12" r="2" fill="#f97316" />
+          <circle cx="12" cy="12" r="2" fill="#ef4444" />
+        </svg>
+      </button>
+    );
+  }
+
+  return (
+    <div className="map-legend" role="group" aria-label="Map legend">
+      <button
+        type="button"
+        className="map-legend-close"
+        onClick={() => setCollapsed(true)}
+        title="Hide legend"
+        aria-label="Hide legend"
+      >
+        ×
+      </button>
+
+      <div className="map-legend-section">
+        <span className="map-legend-section-title">Stops (waiting)</span>
+        <div className="map-legend-row map-legend-row--inline">
+          <span className="map-legend-chip">
+            <span className="map-legend-swatch map-legend-swatch--dot" style={{ background: '#22c55e' }} />
+            &lt;6
+          </span>
+          <span className="map-legend-chip">
+            <span className="map-legend-swatch map-legend-swatch--dot" style={{ background: '#f59e0b' }} />
+            6–14
+          </span>
+          <span className="map-legend-chip">
+            <span className="map-legend-swatch map-legend-swatch--dot" style={{ background: '#ef4444' }} />
+            15+
+          </span>
+          <span className="map-legend-chip">
+            <span className="map-legend-swatch map-legend-swatch--dot map-legend-swatch--inactive" />
+            Off
+          </span>
+        </div>
+      </div>
+
+      <div className="map-legend-section">
+        <span className="map-legend-section-title">Vehicles (occupancy)</span>
+        <div className="map-legend-row">
+          <span className="map-legend-swatch map-legend-swatch--dot" style={{ background: '#22c55e' }} />
+          <span>&lt; 40%</span>
+        </div>
+        <div className="map-legend-row">
+          <span className="map-legend-swatch map-legend-swatch--dot" style={{ background: '#eab308' }} />
+          <span>40 – 70%</span>
+        </div>
+        <div className="map-legend-row">
+          <span className="map-legend-swatch map-legend-swatch--dot" style={{ background: '#f97316' }} />
+          <span>70 – 90%</span>
+        </div>
+        <div className="map-legend-row">
+          <span className="map-legend-swatch map-legend-swatch--dot" style={{ background: '#ef4444' }} />
+          <span>90%+</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FullscreenButton({ isFullscreen, onClick }) {
   return (
     <button
@@ -197,13 +275,6 @@ export default function MapView({
   useEffect(() => {
     if (!activeRouteKey || !stops.length || !MAPBOX_TOKEN) return;
 
-    try {
-      for (let i = sessionStorage.length - 1; i >= 0; i--) {
-        const k = sessionStorage.key(i);
-        if (k?.startsWith('tf_rg_')) sessionStorage.removeItem(k);
-      }
-    } catch { /* ignore */ }
-
     const currentIds = activeRouteKey.split(',');
     const currentRoutes = routes.filter((r) => currentIds.includes(r.id));
     const lookup = {};
@@ -283,14 +354,31 @@ export default function MapView({
       })),
   }), [stops, activeStopIds]);
 
-  /* ---- Active stop circle paint (traffic-light) ---- */
+  /* ---- Active stop circle paint (traffic-light, zoom-aware) ---- */
   const activeStopPaint = useMemo(() => ({
     'circle-radius': [
-      'interpolate', ['linear'], ['get', 'count'],
-      0, 6,
-      10, 8,
-      20, 10,
-      40, 12,
+      'interpolate', ['linear'], ['zoom'],
+      10, [
+        'interpolate', ['linear'], ['get', 'count'],
+        0, 1.5,
+        10, 2,
+        20, 2.5,
+        40, 3,
+      ],
+      14, [
+        'interpolate', ['linear'], ['get', 'count'],
+        0, 4,
+        10, 5.5,
+        20, 7,
+        40, 8.5,
+      ],
+      17, [
+        'interpolate', ['linear'], ['get', 'count'],
+        0, 7,
+        10, 9,
+        20, 11,
+        40, 13,
+      ],
     ],
     'circle-color': [
       'step', ['get', 'count'],
@@ -298,16 +386,21 @@ export default function MapView({
       6, '#f59e0b',
       15, '#ef4444',
     ],
-    'circle-stroke-width': 2,
+    'circle-stroke-width': 1.5,
     'circle-stroke-color': '#ffffff',
     'circle-opacity': 0.9,
   }), []);
 
-  /* ---- Inactive stop circle paint (greyed out) ---- */
+  /* ---- Inactive stop circle paint (greyed out, zoom-aware) ---- */
   const inactiveStopPaint = useMemo(() => ({
-    'circle-radius': 3.5,
+    'circle-radius': [
+      'interpolate', ['linear'], ['zoom'],
+      10, 0.8,
+      14, 2,
+      17, 3.5,
+    ],
     'circle-color': dark ? '#666' : '#aaa',
-    'circle-opacity': 0.4,
+    'circle-opacity': 0.3,
     'circle-stroke-width': 0,
   }), [dark]);
 
@@ -339,10 +432,10 @@ export default function MapView({
     'circle-radius': 18,
     'circle-color': [
       'step', ['get', 'occupancy'],
-      '#3b82f6',
-      40, '#6366f1',
-      70, '#c026d3',
-      90, '#e11d48',
+      '#22c55e',
+      40, '#eab308',
+      70, '#f97316',
+      90, '#ef4444',
     ],
     'circle-opacity': 0.25,
     'circle-stroke-width': 0,
@@ -352,10 +445,10 @@ export default function MapView({
     'circle-radius': 9,
     'circle-color': [
       'step', ['get', 'occupancy'],
-      '#3b82f6',
-      40, '#6366f1',
-      70, '#c026d3',
-      90, '#e11d48',
+      '#22c55e',
+      40, '#eab308',
+      70, '#f97316',
+      90, '#ef4444',
     ],
     'circle-stroke-width': 2.5,
     'circle-stroke-color': '#ffffff',
@@ -501,9 +594,9 @@ export default function MapView({
                   className="map-popup-occ-fill"
                   style={{
                     width: `${Math.min(vehiclePopup.occupancy, 100)}%`,
-                    background: vehiclePopup.occupancy >= 90 ? '#e11d48'
-                      : vehiclePopup.occupancy >= 70 ? '#c026d3'
-                      : vehiclePopup.occupancy >= 40 ? '#6366f1' : '#3b82f6',
+                    background: vehiclePopup.occupancy >= 90 ? '#ef4444'
+                      : vehiclePopup.occupancy >= 70 ? '#f97316'
+                      : vehiclePopup.occupancy >= 40 ? '#eab308' : '#22c55e',
                   }}
                 />
               </div>
@@ -587,6 +680,7 @@ export default function MapView({
       {onToggleFullscreen && (
         <FullscreenButton isFullscreen={isFullscreen} onClick={onToggleFullscreen} />
       )}
+      <MapLegend />
     </div>
   );
 }

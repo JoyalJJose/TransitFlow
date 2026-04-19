@@ -37,16 +37,16 @@ function barColor(i, total) {
 }
 
 function effColor(pct) {
-  if (pct >= 70) return '#9063ff';
-  if (pct >= 50) return '#a78bfa';
-  if (pct >= 30) return '#c4b5fd';
-  return '#ddd6fe';
+  if (pct >= 70) return '#22c55e';
+  if (pct >= 50) return '#84cc16';
+  if (pct >= 30) return '#eab308';
+  return '#ef4444';
 }
 
 function delayColor(sec) {
-  if (sec >= 600) return '#d7a6b3';
-  if (sec >= 300) return '#a78bfa';
-  return '#9063ff';
+  if (sec >= 600) return '#ef4444';
+  if (sec >= 300) return '#f97316';
+  return '#22c55e';
 }
 
 function relativeTime(ts) {
@@ -67,12 +67,19 @@ function freshnessColor(ts, thresholdSec) {
 export default function AnalyticsPage({ data, theme }) {
   const dark = theme === 'dark';
   const grid = dark ? 'rgba(144,99,255,0.12)' : 'rgba(57,32,97,0.08)';
-  const tick = { fill: dark ? 'rgba(229,205,200,0.65)' : 'rgba(57,32,97,0.45)', fontSize: 10 };
-  const tooltipStyle = {
-    background: dark ? '#2a2b44' : '#fff',
-    border: `1px solid ${dark ? 'rgba(144,99,255,0.2)' : 'rgba(57,32,97,0.12)'}`,
-    borderRadius: 6, fontSize: 12,
-  };
+  const tick = useMemo(
+    () => ({ fill: dark ? 'rgba(229,205,200,0.85)' : 'rgba(57,32,97,0.7)', fontSize: 11 }),
+    [dark],
+  );
+  const tooltipStyle = useMemo(
+    () => ({
+      background: dark ? '#2a2b44' : '#fff',
+      border: `1px solid ${dark ? 'rgba(144,99,255,0.2)' : 'rgba(57,32,97,0.12)'}`,
+      borderRadius: 6,
+      fontSize: 12,
+    }),
+    [dark],
+  );
 
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedRoute, setSelectedRoute] = useState(() => searchParams.get('route') || 'all');
@@ -154,16 +161,38 @@ export default function AnalyticsPage({ data, theme }) {
   );
 
   const filteredStops = useMemo(() => {
-    let base = stops.filter((s) => liveStopIds.has(s.id));
     if (selectedRoute !== 'all') {
       const route = routes.find((r) => r.id === selectedRoute);
       if (route) {
-        const sids = new Set(route.stopIds);
-        base = base.filter((s) => sids.has(s.id));
+        // route.stopIds arrives server-side sorted by GTFS stop_sequence,
+        // so walking it in order preserves the physical stop order along
+        // the route instead of the alphabetical order of `stops`.
+        const stopById = new Map(stops.map((s) => [s.id, s]));
+        return route.stopIds
+          .map((id) => stopById.get(id))
+          .filter((s) => s && liveStopIds.has(s.id));
       }
     }
-    return base;
+    return stops.filter((s) => liveStopIds.has(s.id));
   }, [selectedRoute, routes, stops, liveStopIds]);
+
+  // Stabilize dropdown option lists by content signature so the native
+  // <select>'s children aren't re-rendered every time WS data ticks. That
+  // re-render races with click events on the select, which is why the
+  // first click on the Route/Stop filter sometimes fails to open the
+  // dropdown - Chromium cancels the click when the DOM is being mutated.
+  const routeOptionsSig = dataRoutes.map((r) => `${r.id}:${r.name}`).join('|');
+  const stableRouteOptions = useMemo(
+    () => dataRoutes.map((r) => ({ id: r.id, name: r.name })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [routeOptionsSig],
+  );
+  const stopOptionsSig = filteredStops.map((s) => `${s.id}:${s.name}`).join('|');
+  const stableStopOptions = useMemo(
+    () => filteredStops.map((s) => ({ id: s.id, name: s.name })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stopOptionsSig],
+  );
 
   // --- Context flags ---
   const hasRoute = selectedRoute !== 'all';
@@ -288,17 +317,31 @@ export default function AnalyticsPage({ data, theme }) {
       .slice(0, 15);
   }, [predictions, selectedRoute, hasRoute, stops, routes]);
 
-  // --- Stranded (filter to selected route if applicable) ---
+  // --- Stranded (per-stop when route is selected, per-route otherwise) ---
   const strandedByRoute = useMemo(() => {
     if (!predictions?.routes) return [];
-    let target = predictions.routes;
-    if (hasRoute) target = target.filter((r) => r.route_id === selectedRoute);
-    return target.map((r) => {
+    if (hasRoute) {
+      const target = predictions.routes.filter((r) => r.route_id === selectedRoute);
+      const stopTotals = {};
+      for (const r of target) {
+        for (const [stopId, count] of Object.entries(r.stranded_at_stops ?? {})) {
+          stopTotals[stopId] = (stopTotals[stopId] ?? 0) + count;
+        }
+      }
+      const nameMap = {};
+      for (const s of stops) nameMap[s.id] = s.name;
+      return Object.entries(stopTotals)
+        .map(([stopId, total]) => ({ route: nameMap[stopId] ?? stopId, stranded: total }))
+        .filter((x) => x.stranded > 0)
+        .sort((a, b) => b.stranded - a.stranded)
+        .slice(0, 15);
+    }
+    return predictions.routes.map((r) => {
       const total = Object.values(r.stranded_at_stops ?? {}).reduce((s, v) => s + v, 0);
       const routeObj = routes.find((x) => x.id === r.route_id);
       return { route: routeObj?.name ?? r.route_id, stranded: total };
     }).filter((x) => x.stranded > 0).sort((a, b) => b.stranded - a.stranded).slice(0, 15);
-  }, [predictions, routes, hasRoute, selectedRoute]);
+  }, [predictions, routes, stops, hasRoute, selectedRoute]);
 
   // --- Resource Efficiency ---
   const resourceEff = useMemo(() => {
@@ -363,15 +406,15 @@ export default function AnalyticsPage({ data, theme }) {
         <label className="analytics-filter-group">
           <span className="analytics-filter-label">Route</span>
           <select value={selectedRoute} onChange={(e) => { setSelectedRoute(e.target.value); setSelectedStop('all'); }}>
-            <option value="all">All Routes ({dataRoutes.length})</option>
-            {dataRoutes.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            <option value="all">All Routes ({stableRouteOptions.length})</option>
+            {stableRouteOptions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         </label>
         <label className="analytics-filter-group">
           <span className="analytics-filter-label">Stop</span>
           <select value={selectedStop} onChange={(e) => setSelectedStop(e.target.value)}>
-            <option value="all">All Stops ({filteredStops.length})</option>
-            {filteredStops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            <option value="all">All Stops ({stableStopOptions.length})</option>
+            {stableStopOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </label>
         <div className="analytics-time-pills">
@@ -470,10 +513,10 @@ export default function AnalyticsPage({ data, theme }) {
               </ResponsiveContainer>
             ) : !hasStop && topBusiestStops.length ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={topBusiestStops} layout="vertical" margin={{ top: 8, right: 8, bottom: 0, left: 80 }}>
+                <BarChart data={topBusiestStops} layout="vertical" margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={grid} />
                   <XAxis type="number" tick={tick} />
-                  <YAxis dataKey="name" type="category" tick={tick} width={75} />
+                  <YAxis dataKey="name" type="category" tick={tick} width={140} interval={0} />
                   <Tooltip contentStyle={tooltipStyle} />
                   <Bar dataKey="count" radius={[0, 3, 3, 0]} name="Waiting">
                     {topBusiestStops.map((_, i) => (
@@ -525,7 +568,15 @@ export default function AnalyticsPage({ data, theme }) {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={boardingAlighting} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={grid} />
-                    <XAxis dataKey="name" tick={tick} interval={0} angle={-30} textAnchor="end" height={50} />
+                    <XAxis
+                      dataKey="name"
+                      tick={tick}
+                      interval={0}
+                      angle={-30}
+                      textAnchor="end"
+                      height={48}
+                      tickMargin={14}
+                    />
                     <YAxis tick={tick} width={36} />
                     <Tooltip contentStyle={tooltipStyle} />
                     <Bar dataKey="boarded" fill="#9063ff" radius={[3, 3, 0, 0]} name="Boarded" />
@@ -573,7 +624,7 @@ export default function AnalyticsPage({ data, theme }) {
                         {delayData.map((stop, i) => {
                           const delay = delayLookup[stop.stop_id]?.[hour] ?? 0;
                           const intensity = Math.min(delay / 300, 1);
-                          const bg = intensity > 0.6 ? '#d7a6b3' : intensity > 0.3 ? '#a78bfa' : '#9063ff';
+                          const bg = intensity > 0.6 ? '#ef4444' : intensity > 0.3 ? '#f97316' : '#22c55e';
                           return (
                             <div
                               key={i}
@@ -589,10 +640,10 @@ export default function AnalyticsPage({ data, theme }) {
                 );
               })() : !hasRoute && delayData.length ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={delayData.slice(0, 15)} layout="vertical" margin={{ top: 8, right: 8, bottom: 0, left: 80 }}>
+                  <BarChart data={delayData.slice(0, 15)} layout="vertical" margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={grid} />
                     <XAxis type="number" tick={tick} tickFormatter={(v) => `${Math.round(v)}s`} />
-                    <YAxis dataKey="stop_name" type="category" tick={tick} width={75} />
+                    <YAxis dataKey="stop_name" type="category" tick={tick} width={140} interval={0} />
                     <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${Math.round(v)}s`, 'Avg Delay']} />
                     <Bar dataKey="avg_delay" radius={[0, 3, 3, 0]} name="Avg Delay">
                       {delayData.slice(0, 15).map((d, i) => (
@@ -613,14 +664,14 @@ export default function AnalyticsPage({ data, theme }) {
             Hidden when: all routes + specific stop */}
         {showRouteCharts && (
           <div className="panel analytics-chart-card">
-            <div className="panel-header"><h2>Stranded Passengers{hasRoute ? '' : ' by Route'}</h2></div>
+            <div className="panel-header"><h2>Stranded Passengers {hasRoute ? 'by Stop' : 'by Route'}</h2></div>
             <div className="analytics-chart-body">
               {strandedByRoute.length ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={strandedByRoute} layout="vertical" margin={{ top: 8, right: 8, bottom: 0, left: 80 }}>
+                  <BarChart data={strandedByRoute} layout="vertical" margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={grid} />
                     <XAxis type="number" tick={tick} />
-                    <YAxis dataKey="route" type="category" tick={tick} width={75} />
+                    <YAxis dataKey="route" type="category" tick={tick} width={hasRoute ? 140 : 90} interval={0} />
                     <Tooltip contentStyle={tooltipStyle} />
                     <Bar dataKey="stranded" radius={[0, 3, 3, 0]} name="Stranded">
                       {strandedByRoute.map((_, i) => (
@@ -645,10 +696,10 @@ export default function AnalyticsPage({ data, theme }) {
             <div className="analytics-chart-body">
               {resourceEff.length ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={resourceEff} layout="vertical" margin={{ top: 8, right: 8, bottom: 0, left: 80 }}>
+                  <BarChart data={resourceEff} layout="vertical" margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={grid} />
                     <XAxis type="number" domain={[0, 100]} tick={tick} tickFormatter={(v) => `${v}%`} />
-                    <YAxis dataKey="route" type="category" tick={tick} width={75} />
+                    <YAxis dataKey="route" type="category" tick={tick} width={140} interval={0} />
                     <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${v}%`, 'Utilisation']} />
                     <Bar dataKey="efficiency" radius={[0, 3, 3, 0]} name="Utilisation">
                       {resourceEff.map((r, i) => (

@@ -17,18 +17,19 @@
   --surface-hover: rgba(144, 99, 255, 0.05);
   --border: rgba(57, 32, 97, 0.1);
   --text: #1a1b25;
-  --text-muted: rgba(57, 32, 97, 0.5);
+  --text-muted: rgba(57, 32, 97, 0.72);
   --accent: #9063ff;
   --accent-soft: #d7a6b3;
   --chart-grid: rgba(57, 32, 97, 0.08);
   --chart-tooltip-bg: #ffffff;
   --chart-tooltip-border: rgba(57, 32, 97, 0.12);
-  --chart-tick: rgba(57, 32, 97, 0.45);
+  --chart-tick: rgba(57, 32, 97, 0.7);
   --danger: #ef4444;
   --warning: #d7a6b3;
   --success: #9063ff;
   --online: #22c55e;
 
+  font-size: 16.5px;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   color: var(--text);
@@ -46,13 +47,13 @@
   --surface-hover: rgba(144, 99, 255, 0.1);
   --border: rgba(144, 99, 255, 0.15);
   --text: #f0e4df;
-  --text-muted: rgba(215, 166, 179, 0.78);
+  --text-muted: rgba(229, 205, 200, 0.85);
   --accent: #9063ff;
   --accent-soft: #d7a6b3;
   --chart-grid: rgba(144, 99, 255, 0.12);
   --chart-tooltip-bg: #2a2b44;
   --chart-tooltip-border: rgba(144, 99, 255, 0.2);
-  --chart-tick: rgba(229, 205, 200, 0.65);
+  --chart-tick: rgba(229, 205, 200, 0.85);
   --online: #22c55e;
 }
 
